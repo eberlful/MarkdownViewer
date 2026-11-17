@@ -1,6 +1,20 @@
 # Folio – Markdown-Editor, Projekte und Kanban
 
-Folio ist ein lokaler Arbeitsplatz für Projektdokumentation und Aufgaben. Die Anwendung benötigt weder Installation noch Node.js oder externe Bibliotheken.
+Folio ist ein lokaler Arbeitsplatz für Projektdokumentation und Aufgaben. Die Anwendung benötigt keine Installation, kein Node.js und keine externen Bibliotheken; sie kann optional als Progressive Web App installiert werden.
+
+## Als App installieren und offline nutzen
+
+Für die Installation Folio zuerst über `localhost` oder HTTPS öffnen. Einmalig kann zum Beispiel im Projektverzeichnis ein lokaler Server mit Python gestartet werden:
+
+```sh
+python3 -m http.server 8765 --bind 127.0.0.1
+```
+
+Anschließend `http://127.0.0.1:8765/` in Chrome oder Edge öffnen und im Browsermenü **App installieren** beziehungsweise das Installationssymbol in der Adressleiste auswählen. Die genaue Bezeichnung hängt vom Browser ab. Der erste Aufruf benötigt den laufenden Server, damit die App-Dateien für den Offline-Betrieb zwischengespeichert werden. Danach kann Folio auch bei gestopptem Server gestartet werden, solange der Browser den Cache behält. Zum Beenden des Servers im Terminal `Strg+C` drücken. Alternativ kann Folio über HTTPS bereitgestellt werden.
+
+Die installierte App und der Browser verwenden dieselbe Adresse und denselben Browser-Speicher. Eine andere Adresse oder Portnummer gilt als eigener Ursprung; Arbeitsbereich und Berechtigungen müssen dort gegebenenfalls erneut eingerichtet werden. Die Dokumente bleiben im gewählten lokalen Ordner und werden durch den Offline-Cache weder synchronisiert noch als Projektdateien gespeichert. Für externe Bilder und Links kann weiterhin eine Verbindung nötig sein. Ordnerzugriff und Installationsmöglichkeiten hängen vom Browser ab; eine PWA hebt diese Einschränkungen nicht auf.
+
+Wenn ein App-Update bereitsteht, erscheint **Update verfügbar**. Nach dem Speichern aller Änderungen übernimmt ein Klick das Update und startet Folio neu. Beim Start über `localhost` muss der Server für die Suche nach Updates und deren Download wieder laufen. Für die Entwicklung gilt: Bei jeder Änderung an den im Service Worker zwischengespeicherten App-Dateien die Cache-Version in `service-worker.js` erhöhen; der Browser lädt die neue Version dann bei einem erneuten Besuch und hält sie bis zur Bestätigung bereit.
 
 ## Start und Projektstruktur
 
