@@ -26,7 +26,7 @@ function applyLayout() {
 function setMode(next) {
   mode = next; preferences.mode = mode; storePreferences();
   if (area !== 'preview') $('preview-tab').click();
-  applyLayout(); renderEditor();
+  applyLayout(); renderEditor(); if (next === 'split' || next === 'preview') { renderPreview(); if (window.GraphitWorkspace) window.GraphitWorkspace.render(); }
 }
 function showEditor() { if (area !== 'preview') $('preview-tab').click(); if (mode === 'preview') setMode('split'); }
 document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
@@ -84,8 +84,8 @@ function highlightMarkdown(text) {
 }
 function renderEditor() {
   $('editor-highlight').innerHTML = highlightMarkdown(editor.value);
-  renderLineNumbers();
-  const outline = $('outline'); outline.replaceChildren();
+  if (preferences.lines) renderLineNumbers();
+  const outline = $('outline'); if (!preferences.outline) { syncScroll(); return; } outline.replaceChildren();
   let inFence = false;
   editor.value.split('\n').forEach((line, index) => {
     if (/^ {0,3}(`{3,}|~{3,})/.test(line)) { inFence = !inFence; return; }

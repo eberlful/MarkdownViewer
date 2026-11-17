@@ -94,3 +94,9 @@ Mit **Schnell erfassen**, der Befehlspalette oder **Strg+Alt+N** (macOS **⌘+Al
 Mit **Präsentieren** oder dem Befehl **Präsentation starten** wird der aktuelle Editorstand als Folien angezeigt. Überschriften `#` und `##` sowie eine eigene Zeile `---` beginnen eine neue Folie. Ein abgeschlossener YAML-Header am Anfang wird ausgelassen; Trennzeichen in Codeblöcken bleiben erhalten. Längere Folien lassen sich scrollen.
 
 Die Pfeiltasten, Bild-auf/Bild-ab und die Schaltflächen wechseln die Folie; die Leertaste geht vorwärts. Escape oder **Beenden** schließt die Präsentation. Graphit versucht, den Browser-Vollbildmodus zu öffnen; andernfalls füllt die Präsentation das App-Fenster. Checkboxen sind während der Präsentation schreibgeschützt.
+
+## Bilder und Tabellen
+
+In einem gespeicherten Dokument können PNG-, JPEG-, GIF-, WebP-, AVIF- und BMP-Bilder über die Zwischenablage oder per Drag-and-drop in den Editor eingefügt werden. In Arbeitsbereichen werden sie im Unterordner `attachments` neben dem Dokument gespeichert. In einzeln geöffneten Dokumenten werden sie als Daten-URL in das Markdown eingebettet. Neue Dokumente müssen vor dem Einfügen zuerst gespeichert werden. Die Einfügung erfolgt an der aktuellen Cursorposition.
+
+Die Vorschau unterstützt Markdown-Tabellen mit links-, rechts- und zentriert ausgerichteten Spalten. Die Markdown-Unterstützung ist weiterhin auf die dokumentierten Formate begrenzt.

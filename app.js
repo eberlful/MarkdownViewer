@@ -20,7 +20,7 @@ function updateStatus() {
   $('word-count').textContent = `${(editor.value.trim().match(/\S+/g) || []).length} Wörter`;
   document.title = `${state.dirty ? '● ' : ''}${state.name} – Graphit`;
 }
-function changed() { updateStatus(); if (window.GraphitTabs) window.GraphitTabs.capture(); if (window.GraphitWorkspace) window.GraphitWorkspace.render(); if (window.GraphitEnhancements) window.GraphitEnhancements.changed(); if (window.GraphitTags) window.GraphitTags.render(); renderPreview(); renderBoard(); renderTodos(); if (window.FolioFeatures) window.FolioFeatures.renderEditor(); }
+function changed() { updateStatus(); if (window.GraphitTabs) window.GraphitTabs.capture(); if (window.GraphitEnhancements) window.GraphitEnhancements.changed(); if (!$('preview-view').hidden && !$('result-panel').hidden) { if (window.GraphitWorkspace) window.GraphitWorkspace.render(); renderPreview(); } if (!$('projects-view').hidden && window.GraphitWorkspace) window.GraphitWorkspace.render(); if (!$('board-view').hidden) renderBoard(); if (!$('todos-view').hidden) renderTodos(); if (window.GraphitTags) window.GraphitTags.render(); if (window.FolioFeatures) window.FolioFeatures.renderEditor(); }
 function edited() { saveError = ''; changed(); scheduleAutosave(); }
 function canLeave(tabSwitch = false) { if (saveInFlight || state.moving) { toast('Bitte warte, bis das Speichern abgeschlossen ist.'); return false; } if (tabSwitch && window.GraphitTabs) return true; return !state.dirty || window.confirm('Es gibt ungespeicherte Änderungen. Möchtest du sie verwerfen?'); }
 function loadDocument(text, name, file = null, path = '', folderTarget = false, isNew = false) {
@@ -32,7 +32,7 @@ function loadDocument(text, name, file = null, path = '', folderTarget = false, 
   changed(); renderFiles(); if (window.FolioFeatures) window.FolioFeatures.documentOpened(); $('sidebar').classList.remove('open'); $('toggle-sidebar').setAttribute('aria-expanded', 'false');
 }
 window.addEventListener('beforeunload', event => { if (state.dirty || (window.GraphitTabs && window.GraphitTabs.hasDirty())) { event.preventDefault(); event.returnValue = ''; } });
-function bindAppEditor(element) { element.addEventListener('input', edited); }
+function bindAppEditor(element) { element.addEventListener('input', edited); if (window.GraphitImages) window.GraphitImages.bind(element); }
 bindAppEditor(editor);
 window.addEventListener('keydown', event => {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 's') return;
@@ -42,6 +42,7 @@ window.addEventListener('keydown', event => {
 function escapeHTML(text) { return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 function safeURL(value, image = false) {
   const raw = value.replace(/&amp;/g, '&').trim();
+  if (image && /^data:image\/(?:png|jpeg|gif|webp|avif|bmp);base64,[a-z0-9+/]+=*$/i.test(raw)) return raw;
   if (/^(?:https?:|mailto:)/i.test(raw) || (!/^[a-z][a-z\d+.-]*:/i.test(raw) && !raw.startsWith('//'))) return escapeHTML(raw);
   return image ? '' : '#';
 }
@@ -76,14 +77,28 @@ function inline(text) {
   return result + inlineBase(text.slice(position));
 }
 function markdown(text, lineOffset = 0) {
-  const lines = text.replace(/\r\n?/g, '\n').split('\n'); let out = '', list = '', paragraph = [], code = null, codeFence = null, quote = [], quoteStart = 0;
+  const lines = text.replace(/\r\n?/g, '\n').split('\n'); let out = '', list = '', paragraph = [], code = null, codeFence = null, quote = [], quoteStart = 0, skipUntil = -1;
+  const cells = line => line.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map(cell => cell.trim().replace(/\\\|/g, '|'));
   const closeList = () => { if (list) { out += `</${list}>`; list = ''; } };
   const flushParagraph = () => { if (paragraph.length) { out += `<p>${inline(paragraph.join(' '))}</p>`; paragraph = []; } };
   const flushQuote = () => { if (quote.length) { out += `<blockquote>${markdown(quote.join('\n'), quoteStart)}</blockquote>`; quote = []; } };
   for (const [index, line] of lines.entries()) {
+    if (index <= skipUntil) continue;
     const fence = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     if (code !== null) { if (fence && fence[1][0] === codeFence[0] && fence[1].length >= codeFence.length && !fence[2].trim()) { out += `<pre><code>${escapeHTML(code.join('\n'))}</code></pre>`; code = null; codeFence = null; } else code.push(line); continue; }
     if (fence) { flushParagraph(); flushQuote(); closeList(); code = []; codeFence = fence[1]; continue; }
+    if (line.includes('|') && index + 1 < lines.length) {
+      const headers = cells(line), separators = cells(lines[index + 1]);
+      if (headers.length === separators.length && separators.every(cell => /^:?-{3,}:?$/.test(cell))) {
+        flushParagraph(); flushQuote(); closeList();
+        const align = separators.map(cell => cell.startsWith(':') && cell.endsWith(':') ? 'center' : cell.endsWith(':') ? 'right' : cell.startsWith(':') ? 'left' : '');
+        const renderCells = (row, tag) => headers.map((_, i) => `<${tag}${align[i] ? ` style="text-align:${align[i]}"` : ''}>${inline(row[i] || '')}</${tag}>`).join('');
+        out += `<table><thead><tr>${renderCells(headers, 'th')}</tr></thead><tbody>`;
+        let end = index + 2;
+        while (end < lines.length && lines[end].trim() && lines[end].includes('|')) { out += `<tr>${renderCells(cells(lines[end]), 'td')}</tr>`; end++; }
+        out += '</tbody></table>'; skipUntil = end - 1; continue;
+      }
+    }
     if (/^\s*<!--\s*kanban:(?:start|end)\s*-->\s*$/.test(line)) { flushParagraph(); flushQuote(); closeList(); continue; }
     const q = line.match(/^\s*>\s?(.*)$/); if (q) { flushParagraph(); closeList(); if (!quote.length) quoteStart = lineOffset + index; quote.push(q[1]); continue; } flushQuote();
     if (!line.trim()) { flushParagraph(); closeList(); continue; }
@@ -95,7 +110,7 @@ function markdown(text, lineOffset = 0) {
   flushParagraph(); flushQuote(); closeList(); if (code !== null) out += `<pre><code>${escapeHTML(code.join('\n'))}</code></pre>`;
   return out;
 }
-function renderPreview() { $('preview').innerHTML = markdown(editor.value); renderBacklinks(); }
+function renderPreview() { $('preview').innerHTML = markdown(editor.value); if (window.GraphitImages) window.GraphitImages.resolve($('preview')); renderBacklinks(); }
 function renderBacklinks() {
   const list = $('backlinks-list'); list.replaceChildren(); $('backlinks-count').textContent = '';
   const message = text => { const p = document.createElement('p'); p.className = 'backlinks-empty'; p.textContent = text; list.append(p); };
@@ -409,7 +424,9 @@ async function saveDocument(manual = true) {
         }
         const writable = await handle.createWritable(); await writable.write(snapshot); await writable.close();
         if (epoch === documentEpoch) { state.file = handle; state.path ||= state.name; state.saved = snapshot; state.isNew = false; saveError = ''; }
-        await refreshFiles();
+        const cached = state.files.find(file => file.path === state.path);
+        if (cached) { cached.text = snapshot; try { cached.modified = (await handle.getFile()).lastModified || 0; } catch {} }
+        else await refreshFiles();
         if (window.GraphitTabs) window.GraphitTabs.capture();
         if (manual) toast('Datei gespeichert.');
       } else if (manual) {
@@ -422,6 +439,6 @@ async function saveDocument(manual = true) {
   try { await saveInFlight; } finally { saveInFlight = null; updateStatus(); if (window.GraphitTabs) window.GraphitTabs.capture(); if (epoch === documentEpoch && state.dirty && !saveError) scheduleAutosave(); }
 }
 $('save').onclick = () => saveDocument(true);
-for (const name of ['preview', 'board', 'todos', 'projects', 'tags']) $(`${name}-tab`).onclick = () => { for (const other of ['preview', 'board', 'todos', 'projects', 'tags']) { const selected = name === other; $(`${other}-tab`).setAttribute('aria-selected', String(selected)); $(`${other}-view`).hidden = !selected; } if (window.FolioFeatures) window.FolioFeatures.selectArea(name); if (name === 'tags' && window.GraphitTags) window.GraphitTags.render(); };
+for (const name of ['preview', 'board', 'todos', 'projects', 'tags']) $(`${name}-tab`).onclick = () => { for (const other of ['preview', 'board', 'todos', 'projects', 'tags']) { const selected = name === other; $(`${other}-tab`).setAttribute('aria-selected', String(selected)); $(`${other}-view`).hidden = !selected; } if (window.FolioFeatures) window.FolioFeatures.selectArea(name); if (name === 'tags' && window.GraphitTags) window.GraphitTags.render(); if (name === 'preview') { renderPreview(); if (window.GraphitWorkspace) window.GraphitWorkspace.render(); } if (name === 'board') renderBoard(); if (name === 'todos') renderTodos(); };
 editor.value = welcome; state.saved = welcome; changed();
 const restoreReady = restoreOnStart();

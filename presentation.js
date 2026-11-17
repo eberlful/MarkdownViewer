@@ -7,6 +7,7 @@
 
   function render() {
     slide.innerHTML = slides.length ? markdown(slides[index].text, slides[index].startLine - 1) : '<p>Dieses Dokument enthält keinen präsentierbaren Inhalt.</p>';
+    if (window.GraphitImages) window.GraphitImages.resolve(slide);
     slide.querySelectorAll('input[type="checkbox"]').forEach(box => { box.disabled = true; });
     count.textContent = slides.length ? `${index + 1} / ${slides.length}` : '0 / 0';
     previous.disabled = index <= 0; next.disabled = index >= slides.length - 1;

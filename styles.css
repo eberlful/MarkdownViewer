@@ -372,3 +372,6 @@ button:disabled { cursor: not-allowed; }
 .presentation-controls { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 12px; border-top: 1px solid var(--border); }
 .presentation-controls button { padding: 8px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); color: var(--text); }
 .presentation-controls button:disabled { opacity: .4; }
+
+.markdown table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+.markdown th, .markdown td { border: 1px solid var(--border, #888); padding: .45em .65em; }

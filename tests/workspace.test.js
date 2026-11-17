@@ -232,3 +232,18 @@ test('Ein Schreibfehler erhält den Entwurf und meldet den Fehler', async () => 
   assert.equal(vm.runInContext('state.dirty', context), true);
   assert.match(vm.runInContext('saveError', context), /Keine Schreibberechtigung/);
 });
+
+test('Markdown-Tabellen rendern Ausrichtung und maskierte Trennzeichen', () => {
+  const { context } = app();
+  const html = vm.runInContext("markdown('| Name | Wert |\\n| :--- | ---: |\\n| **A** | 42 |')", context);
+  assert.match(html, /<table>/);
+  assert.match(html, /<th style="text-align:left">Name<\/th>/);
+  assert.match(html, /<td style="text-align:right">42<\/td>/);
+  assert.match(html, /<strong>A<\/strong>/);
+});
+
+test('Nur sichere Bild-Daten-URLs werden in der Vorschau zugelassen', () => {
+  const { context } = app();
+  assert.match(vm.runInContext("inline('![Bild](data:image/png;base64,YQ==)')", context), /src="data:image\/png;base64,YQ=="/);
+  assert.doesNotMatch(vm.runInContext("inline('![Bild](data:text/html;base64,YQ==)')", context), /<img/);
+});
