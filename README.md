@@ -34,6 +34,10 @@ Neue Dokumente müssen zunächst ausdrücklich gespeichert werden. Eine über de
 
 Mit **Strg+Umschalt+P** (macOS **⌘+Umschalt+P**) öffnet sich die Befehlspalette. Mit **Strg+P** (macOS **⌘P**) öffnet sich die Suche über Dateinamen, Pfade und Inhalte im Arbeitsbereich. Ohne Suchtext zeigt sie zuletzt geöffnete Dateien; Inhaltstreffer führen zur betreffenden Zeile und berücksichtigen den aktuellen Editorstand. Nicht lesbare Dateien können nicht durchsucht werden. Die Gliederung springt zu Markdown-Überschriften, und die Editorleiste fügt Formatierung ein. **Strg/⌘+B**, **Strg/⌘+I** und **Strg/⌘+K** formatieren Auswahl als fett, kursiv beziehungsweise Link.
 
+Tags wie `#idee` oder `#projekt/planung` lassen sich direkt im Text verwenden. Beim Tippen schlägt der Editor vorhandene Tags vor; Pfeiltasten und Eingabetaste wählen einen Vorschlag aus, Escape schließt die Liste. Tags können auch im YAML-Header als `tags: idee`, als Liste `tags: [idee, projekt/planung]` oder als mehrzeilige Liste unter `tags:` stehen. YAML-Werte dürfen einfach oder doppelt zitiert sein; die Tag-Auswertung unterstützt diese gängigen Formen, aber kein vollständiges YAML. Namen dürfen Buchstaben, Ziffern, Unterstriche und Bindestriche enthalten und nicht nur aus Ziffern bestehen. `/` trennt Untertags.
+
+Die Ansicht **Tags** zeigt alle Tags im Arbeitsbereich und die Anzahl der zugehörigen Dateien. Wähle ein Tag, um die Dateien zu öffnen; bei übergeordneten Tags sind Untertags eingeschlossen. Tags in der Vorschau öffnen dieselbe Ansicht. Groß- und Kleinschreibung wird beim Vergleich ignoriert. Ungespeicherte Änderungen in geöffneten Tabs fließen in die Übersicht ein; Tags in Code, URLs und Linkzielen werden nicht erfasst. Nicht lesbare Dateien fehlen in der Übersicht.
+
 ## Kanban-Tickets
 
 Im Tab **Kanban** ein Projekt auswählen und mit **＋ Ticket** ein Ticket samt Priorität anlegen. Das Board lässt sich nach Priorität filtern. Es wird unter `Projektname/tickets/` als eigene Markdown-Datei gespeichert. Ein Klick auf die Karte öffnet diese im Editor. Beispiel:

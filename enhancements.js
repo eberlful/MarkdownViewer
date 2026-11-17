@@ -66,6 +66,7 @@
     { id: 'save', label: 'Dokument speichern', run: () => $('save').click() },
     { id: 'board', label: 'Kanban öffnen', run: () => $('board-tab').click() },
     { id: 'todos', label: 'TODOs öffnen', run: () => $('todos-tab').click() },
+    { id: 'tags', label: 'Tags öffnen', run: () => $('tags-tab').click() },
     { id: 'document', label: 'Dokument öffnen', run: () => $('preview-tab').click() },
     { id: 'theme', label: 'Helles oder dunkles Design wechseln', run: () => $('toggle-theme').click() },
     { id: 'favorite', label: 'Favorit hinzufügen oder entfernen', run: () => $('favorite-document').click() },
@@ -99,6 +100,11 @@
   function insertLink(choice) {
     if (!linkRange) return;
     const { start, end } = linkRange; const source = state.path || state.name;
+    if (choice.tag) {
+      editor.focus(); editor.setSelectionRange(start, end);
+      if (!document.execCommand('insertText', false, `#${choice.tag}`)) { editor.setRangeText(`#${choice.tag}`, start, end, 'end'); edited(); }
+      closeSuggestions(); return;
+    }
     const target = choice.file ? relativeLink(source, choice.file.path) : `./${choice.name.replace(/\.(?:md|markdown)$/i, '')}`;
     editor.focus(); editor.setSelectionRange(start, end);
     if (!document.execCommand('insertText', false, `[[${target}]]`)) { editor.setRangeText(`[[${target}]]`, start, end, 'end'); edited(); }
@@ -113,7 +119,7 @@
     const box = $('link-suggestions'); box.replaceChildren();
     matches.forEach((choice, index) => {
       const button = document.createElement('button'); button.type = 'button'; button.setAttribute('role', 'option'); button.setAttribute('aria-selected', String(index === selected));
-      button.textContent = choice.file ? choice.file.path : `Neue Notiz „${choice.name}“ anlegen`;
+      button.textContent = choice.tag ? `#${choice.tag}` : choice.file ? choice.file.path : `Neue Notiz „${choice.name}“ anlegen`;
       button.addEventListener('mousedown', event => event.preventDefault()); button.onclick = () => insertLink(choice); box.append(button);
     });
     box.hidden = !matches.length;
@@ -121,7 +127,19 @@
   function updateSuggestions() {
     if (!state.directory || !state.folderTarget || editor.selectionStart !== editor.selectionEnd) { closeSuggestions(); return; }
     const cursor = editor.selectionStart, prefix = editor.value.slice(0, cursor), match = prefix.match(/\[\[([^\]\n|]*)$/);
-    if (!match) { closeSuggestions(); return; }
+    if (!match) {
+      const candidate = prefix.match(/#[\p{L}\p{N}_/-]*$/u);
+      if (!candidate || !window.GraphitTags) { closeSuggestions(); return; }
+      const start = cursor - candidate[0].length, line = prefix.split('\n').length;
+      const probe = prefix + 'a' + editor.value.slice(cursor);
+      const parsed = FolioCore.findTags(probe).find(tag => tag.source === 'inline' && tag.line === line && tag.start === start - (prefix.lastIndexOf('\n') + 1));
+      if (!parsed) { closeSuggestions(); return; }
+      const query = FolioCore.tagKey(candidate[0].slice(1));
+      matches = window.GraphitTags.index().filter(tag => tag.key.startsWith(query) && tag.key !== query).slice(0, 8).map(tag => ({ tag: tag.name }));
+      const suffix = editor.value.slice(cursor).match(/^[\p{L}\p{N}_/-]*/u)[0];
+      selected = 0; linkRange = { start, end: cursor + suffix.length }; $('link-suggestions').setAttribute('aria-label', 'Tag-Vorschläge'); renderSuggestions(); return;
+    }
+    $('link-suggestions').setAttribute('aria-label', 'Notizverknüpfungen');
     const query = match[1].trim(), lower = query.toLocaleLowerCase('de');
     matches = workspaceFiles().filter(file => !file.error && file.path.toLocaleLowerCase('de').includes(lower)).slice(0, 8).map(file => ({ file }));
     if (query && !/[\\/\r\n\[\]|]/.test(query) && query !== '.' && query !== '..') {
@@ -141,6 +159,6 @@
     element.addEventListener('blur', () => { setTimeout(closeSuggestions, 150); });
   }
   bindEditor(editor);
-  window.GraphitEnhancements = { bindEditor, workspaceChanged, renameFavorite(oldPath, newPath) { favorites = favorites.map(path => path === oldPath ? newPath : path); storeFavorites(); renderQuickFiles(); }, changed: renderQuickFiles, documentOpened() { hideStart(); renderQuickFiles(); } };
+  window.GraphitEnhancements = { bindEditor, workspaceChanged, renameFavorite(oldPath, newPath) { favorites = favorites.map(path => path === oldPath ? newPath : path); storeFavorites(); renderQuickFiles(); }, changed: renderQuickFiles, documentOpened() { closeSuggestions(); hideStart(); renderQuickFiles(); } };
   showStart();
 })();

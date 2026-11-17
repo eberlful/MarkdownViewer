@@ -55,6 +55,7 @@ test('Service Worker hält nur die App-Dateien offline bereit, auch unter einem 
   assert.equal(await worker.request('https://example.test/folio/theme.js'), 'cached:./theme.js');
   assert.equal(await worker.request('https://example.test/folio/tabs.js'), 'cached:./tabs.js');
   assert.equal(await worker.request('https://example.test/folio/enhancements.js'), 'cached:./enhancements.js');
+  assert.equal(await worker.request('https://example.test/folio/tags.js'), 'cached:./tags.js');
   assert.equal(await worker.request('https://example.test/folio/assets/graphit-mark.svg'), 'cached:./assets/graphit-mark.svg');
   assert.equal(await worker.request('https://example.test/folio/user-note.md'), undefined);
   assert.equal(await worker.request('https://another.test/folio/app.js'), undefined);

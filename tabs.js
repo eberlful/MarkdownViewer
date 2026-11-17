@@ -67,7 +67,7 @@
       const index = tabs.indexOf(tab); const next = tabs[index + 1] || tabs[index - 1];
       if (!select(next)) return;
     }
-    clearTimeout(tab.timer); tabs.splice(tabs.indexOf(tab), 1); tab.element.remove(); render(); persist();
+    clearTimeout(tab.timer); tabs.splice(tabs.indexOf(tab), 1); tab.element.remove(); render(); persist(); if (window.GraphitTags) window.GraphitTags.render();
   }
   function selectPath(path) {
     const tab = tabs.find(item => item.workspace === state.directory && item.folderTarget && item.path === path);

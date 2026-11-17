@@ -162,6 +162,19 @@ button:disabled { cursor: not-allowed; }
 .markdown h2 { margin: 29px 0 12px; font-size: 20px; }
 .markdown h3 { font-size: 16px; }
 .markdown a { color: var(--accent); text-decoration-color: var(--accent-strong); text-underline-offset: 3px; }
+.markdown-tag { display: inline; padding: 1px 5px; border: 0; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font: inherit; cursor: pointer; }
+.markdown-tag:hover, .markdown-tag:focus-visible { background: var(--selected); text-decoration: underline; }
+.tag-content { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, 2fr); gap: 24px; margin-top: 18px; }
+#tag-filter { width: min(100%, 360px); padding: 9px 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); color: var(--text); }
+.tag-list, .tag-results { min-width: 0; }
+.tag-item, .tag-results button { display: flex; width: 100%; gap: 10px; padding: 8px 10px; border: 0; border-radius: 5px; background: transparent; color: var(--text); text-align: left; }
+.tag-item { justify-content: space-between; padding-left: calc(10px + var(--tag-depth) * 14px); overflow-wrap: anywhere; }
+.tag-item:hover, .tag-item[aria-pressed="true"], .tag-results button:hover, .tag-results button:focus-visible { background: var(--selected); }
+.tag-count, .tag-message, .tag-results button span { color: var(--muted); font-size: 12px; }
+.tag-results h3 { margin: 0 0 8px; overflow-wrap: anywhere; }
+.tag-results button { flex-direction: column; gap: 3px; overflow-wrap: anywhere; }
+.tag-results strong { font-size: 12px; }
+@media (max-width: 700px) { .tag-content { grid-template-columns: 1fr; gap: 16px; } .tabs { max-width: 100%; overflow-x: auto; } }
 .markdown img { max-width: 100%; }
 .markdown ul, .markdown ol { padding-left: 22px; }
 .markdown li { margin: 5px 0; padding-left: 3px; }

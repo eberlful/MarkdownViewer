@@ -22,6 +22,24 @@ test('Nur offene Aufgaben außerhalb von Codeblöcken finden', () => {
   assert.deepEqual(core.findTodos(text), [{line: 1, text: 'Offen'}, {line: 4, text: 'Unteraufgabe'}, {line: 14, text: 'Nummeriert'}]);
 });
 
+test('Tags aus Markdown und üblichen YAML-Listen finden und Code und Ziele ignorieren', () => {
+  const text = ['---', 'tags: [Idee, "#Projekt/Planung", \'überblick\']', 'title: "#kein-tag"', '---', '# Titel', '#idee #Projekt/planung #123 #tag_2', '`#code` \\#maskiert [Link](notiz.md#anker) https://example.org/#url', '[[seite#anker]] ![Bild](img.png#fragment)', '```md', '#codeblock', '```', '> ~~~', '> #zitatcode', '> ~~~', '', '    #eingerückt', '- Liste', '    - #unterpunkt'].join('\n');
+  assert.deepEqual(core.findTags(text).map(tag => [tag.name, tag.line]), [
+    ['Idee', 2], ['Projekt/Planung', 2], ['überblick', 2], ['idee', 6], ['Projekt/planung', 6], ['tag_2', 6], ['unterpunkt', 18]
+  ]);
+  assert.equal(core.tagKey('PROJEKT/Planung'), core.tagKey('projekt/planung'));
+});
+
+test('YAML-Tags als Einzelwert und mehrzeilige Liste mit Zitierung erkennen', () => {
+  assert.deepEqual(core.findTags('---\ntags: Thema\n---\nText').map(tag => tag.name), ['Thema']);
+  assert.deepEqual(core.findTags("---\ntags:\n  - eins\n  - 'zwei/drei'\n  - \"#vier\" # Kommentar\n---\n").map(tag => [tag.name, tag.line]), [['eins', 3], ['zwei/drei', 4], ['vier', 5]]);
+});
+
+test('Maskierung und Listentext bei der Tag-Erkennung beachten', () => {
+  const input = ['\\#nein \\\\#ja', '- Eintrag', '    Fortsetzung #auch', '', '    #code', '<!--', '#versteckt', '--> #sichtbar'].join('\n');
+  assert.deepEqual(core.findTags(input).map(tag => [tag.name, tag.line]), [['ja', 1], ['auch', 3], ['sichtbar', 8]]);
+});
+
 test('Markdown- und Wikilinks auflösen, Mehrdeutigkeiten und unsichere Pfade erkennen', () => {
   const files = [{path: 'A/notiz.md'}, {path: 'A/dokumentation/konzept.md'}, {path: 'B/notiz.md'}, {path: 'B/idee mit raum.md'}, {path:'B/gesperrt.md', error:'Kein Zugriff'}];
   assert.equal(core.resolveLink('A/notiz.md', 'dokumentation/konzept.md#ziel', 'markdown', files).path, 'A/dokumentation/konzept.md');

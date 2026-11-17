@@ -20,7 +20,7 @@ function updateStatus() {
   $('word-count').textContent = `${(editor.value.trim().match(/\S+/g) || []).length} Wörter`;
   document.title = `${state.dirty ? '● ' : ''}${state.name} – Graphit`;
 }
-function changed() { updateStatus(); if (window.GraphitTabs) window.GraphitTabs.capture(); if (window.GraphitWorkspace) window.GraphitWorkspace.render(); if (window.GraphitEnhancements) window.GraphitEnhancements.changed(); renderPreview(); renderBoard(); renderTodos(); if (window.FolioFeatures) window.FolioFeatures.renderEditor(); }
+function changed() { updateStatus(); if (window.GraphitTabs) window.GraphitTabs.capture(); if (window.GraphitWorkspace) window.GraphitWorkspace.render(); if (window.GraphitEnhancements) window.GraphitEnhancements.changed(); if (window.GraphitTags) window.GraphitTags.render(); renderPreview(); renderBoard(); renderTodos(); if (window.FolioFeatures) window.FolioFeatures.renderEditor(); }
 function edited() { saveError = ''; changed(); scheduleAutosave(); }
 function canLeave(tabSwitch = false) { if (saveInFlight || state.moving) { toast('Bitte warte, bis das Speichern abgeschlossen ist.'); return false; } if (tabSwitch && window.GraphitTabs) return true; return !state.dirty || window.confirm('Es gibt ungespeicherte Änderungen. Möchtest du sie verwerfen?'); }
 function loadDocument(text, name, file = null, path = '', folderTarget = false, isNew = false) {
@@ -48,7 +48,9 @@ function safeURL(value, image = false) {
 function inlineBase(text) {
   const tokens = [];
   const protect = html => { tokens.push(html); return `\u0000${tokens.length - 1}\u0000`; };
-  let s = escapeHTML(text);
+  let raw = text;
+  for (const tag of FolioCore.inlineTags(text).reverse()) raw = raw.slice(0, tag.start) + protect(`<button type="button" class="markdown-tag" data-tag="${escapeHTML(tag.name)}">#${escapeHTML(tag.name)}</button>`) + raw.slice(tag.end);
+  let s = escapeHTML(raw);
   s = s.replace(/`([^`]+)`/g, (_, code) => protect(`<code>${code}</code>`));
   s = s.replace(/!\[([^\]]*)\]\(([^\s)]+)(?:\s+&quot;[^&]*&quot;)?\)/g, (_, alt, url) => { const src = safeURL(url, true); return src ? protect(`<img src="${src}" alt="${alt}">`) : alt; });
   s = s.replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, (_, a, b) => `<strong>${a || b}</strong>`).replace(/\*([^*]+)\*|_([^_]+)_/g, (_, a, b) => `<em>${a || b}</em>`).replace(/~~([^~]+)~~/g, '<del>$1</del>');
@@ -129,6 +131,7 @@ $('preview').addEventListener('change', event => {
   const updated = $('preview').querySelector(`input[data-task-line="${index + 1}"]`); if (updated) updated.focus();
 });
 $('preview').addEventListener('click', event => {
+  const tag = event.target.closest('button[data-tag]'); if (tag) { if (window.GraphitTags) window.GraphitTags.open(tag.dataset.tag); return; }
   const link = event.target.closest('a[data-folio-path]'); if (!link) return;
   event.preventDefault(); const file = workspaceFiles().find(item => item.path === link.dataset.folioPath); const anchor = link.dataset.folioAnchor; if (file) { const line = anchor ? FolioCore.anchorLine(window.GraphitTabs ? window.GraphitTabs.textFor(file) : file.text, anchor) : null; openProjectFile(file, line); } else if (anchor && link.dataset.folioPath === (state.path || state.name)) { const line = FolioCore.anchorLine(editor.value, anchor); if (line) { if (window.FolioFeatures) window.FolioFeatures.showEditor(); focusLine(line); } }
 });
@@ -263,7 +266,7 @@ async function readWorkspace(dir) {
 function applyWorkspaceScan(scan) {
   state.files = scan.files; if (window.GraphitTabs) window.GraphitTabs.reconcile(scan.files); state.scanErrors = scan.errors; state.tree = scan.tree; state.projects = scan.tree.filter(node => node.kind === 'directory');
   if (!state.projects.some(p => p.name === state.project)) state.project = state.projects[0]?.name || '';
-  renderFiles(); renderBoard(); renderTodos(); renderPreview(); if (window.GraphitWorkspace) window.GraphitWorkspace.render();
+  renderFiles(); renderBoard(); renderTodos(); renderPreview(); if (window.GraphitWorkspace) window.GraphitWorkspace.render(); if (window.GraphitTags) window.GraphitTags.render();
   if (state.scanErrors.length) toast(`${state.scanErrors.length} Einträge konnten nicht gelesen werden.`);
 }
 async function refreshFiles() {
@@ -417,6 +420,6 @@ async function saveDocument(manual = true) {
   try { await saveInFlight; } finally { saveInFlight = null; updateStatus(); if (window.GraphitTabs) window.GraphitTabs.capture(); if (epoch === documentEpoch && state.dirty && !saveError) scheduleAutosave(); }
 }
 $('save').onclick = () => saveDocument(true);
-for (const name of ['preview', 'board', 'todos', 'projects']) $(`${name}-tab`).onclick = () => { for (const other of ['preview', 'board', 'todos', 'projects']) { const selected = name === other; $(`${other}-tab`).setAttribute('aria-selected', String(selected)); $(`${other}-view`).hidden = !selected; } if (window.FolioFeatures) window.FolioFeatures.selectArea(name); };
+for (const name of ['preview', 'board', 'todos', 'projects', 'tags']) $(`${name}-tab`).onclick = () => { for (const other of ['preview', 'board', 'todos', 'projects', 'tags']) { const selected = name === other; $(`${other}-tab`).setAttribute('aria-selected', String(selected)); $(`${other}-view`).hidden = !selected; } if (window.FolioFeatures) window.FolioFeatures.selectArea(name); if (name === 'tags' && window.GraphitTags) window.GraphitTags.render(); };
 editor.value = welcome; state.saved = welcome; changed();
 const restoreReady = restoreOnStart();

@@ -55,10 +55,60 @@ function harness(indexedDB = makeDB()) {
   const events = {};
   const window = { indexedDB, events, addEventListener(type, fn) { (events[type] ||= []).push(fn); }, confirm() { return true; }, alert() {}, matchMedia() { return { matches: false }; } };
   const context = vm.createContext({ document, window, localStorage, FolioCore: core, console, prompt() {}, confirm() {}, getComputedStyle() { return { lineHeight: '20' }; }, setTimeout(fn) { const id = ++timerId; timers.set(id, fn); return id; }, clearTimeout(id) { timers.delete(id); } });
-  for (const source of ['app.js', 'features.js', 'tabs.js', 'enhancements.js', 'workspace.js']) vm.runInContext(fs.readFileSync(source, 'utf8'), context, { filename: source });
+  for (const source of ['app.js', 'features.js', 'tabs.js', 'enhancements.js', 'workspace.js', 'tags.js']) vm.runInContext(fs.readFileSync(source, 'utf8'), context, { filename: source });
   return { context, elements, timers, async runTimers() { const callbacks = [...timers.values()]; timers.clear(); for (const callback of callbacks) await callback(); } };
 }
 async function openWorkspace(app, root) { app.context.root = root; await vm.runInContext('state.directory = root; refreshFiles()', app.context); }
+
+test('Tag-Ansicht zählt Dateien samt Untertags und berücksichtigt Entwürfe in anderen Tabs', async () => {
+  const a = file('a.md', '---\ntags: [Projekt/Planung, idee]\n---\n#projekt/planung'), b = file('b.md', '#PROJEKT/umsetzung');
+  const app = harness(); await openWorkspace(app, directory('root', { 'a.md': a, 'b.md': b }));
+  await vm.runInContext("openProjectFile(state.files.find(f => f.name === 'a.md'))", app.context);
+  vm.runInContext("editor.value += '\\n#neu'; edited()", app.context);
+  await vm.runInContext("openProjectFile(state.files.find(f => f.name === 'b.md'))", app.context);
+  app.elements.get('tags-tab').click();
+  assert.equal(vm.runInContext("window.GraphitTags.index().find(t => t.key === 'projekt').files.size", app.context), 2);
+  assert.equal(vm.runInContext("window.GraphitTags.index().find(t => t.key === 'projekt/planung').files.size", app.context), 1);
+  assert.equal(vm.runInContext("window.GraphitTags.index().find(t => t.key === 'neu').files.size", app.context), 1);
+  const list = app.elements.get('tag-content').children[0], project = list.children.find(button => button.children[0]?.textContent === '#Projekt');
+  project.onclick();
+  const hits = app.elements.get('tag-content').children[1]; assert.equal(hits.children.length, 3);
+  hits.children[1].onclick(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(vm.runInContext('state.path', app.context), 'a.md');
+  assert.equal(vm.runInContext('editor.selectionStart', app.context), 4);
+  const other = directory('other', { 'c.md': file('c.md', '#anders') }); app.context.other = other;
+  await vm.runInContext('window.GraphitTabs.workspaceWillChange(); state.directory = other; refreshFiles()', app.context);
+  assert.deepEqual(Array.from(vm.runInContext('window.GraphitTags.index().map(t => t.name)', app.context)), ['anders']);
+});
+
+test('Tags in der Vorschau und Tastaturvorschläge nutzen dieselben Arbeitsbereichsdaten', async () => {
+  const app = harness(); await openWorkspace(app, directory('root', { 'a.md': file('a.md', '#projekt/planung\n\nText #idee') }));
+  await vm.runInContext("openProjectFile(state.files[0])", app.context);
+  assert.match(vm.runInContext("inline('Text #idee und `#code`')", app.context), /data-tag="idee"/);
+  assert.doesNotMatch(vm.runInContext("inline('`#code`')", app.context), /data-tag/);
+  vm.runInContext("editor.value += '\\n#pro'; editor.setSelectionRange(editor.value.length, editor.value.length)", app.context);
+  const activeEditor = vm.runInContext('editor', app.context); activeEditor.dispatch('input');
+  const suggestions = app.elements.get('link-suggestions');
+  assert.equal(suggestions.hidden, false); assert.equal(suggestions.children[0].textContent, '#projekt');
+  activeEditor.dispatch('keydown', { key: 'ArrowDown', preventDefault() {} });
+  activeEditor.dispatch('keydown', { key: 'Enter', preventDefault() {} });
+  assert.match(vm.runInContext('editor.value', app.context), /#projekt\/planung$/);
+  assert.equal(suggestions.hidden, true);
+  vm.runInContext("window.GraphitTags.open('idee')", app.context);
+  assert.equal(app.elements.get('tags-tab').attributes['aria-selected'], 'true');
+  assert.equal(app.elements.get('tag-content').children[1].children[0].textContent, '#idee');
+});
+
+test('Tag-Vorschläge erscheinen nicht innerhalb von Code oder Wikilinks', async () => {
+  const app = harness(); await openWorkspace(app, directory('root', { 'a.md': file('a.md', '#projekt') }));
+  await vm.runInContext("openProjectFile(state.files[0])", app.context);
+  const activeEditor = vm.runInContext('editor', app.context);
+  vm.runInContext("editor.value = '`#pro`'; editor.setSelectionRange(5, 5)", app.context); activeEditor.dispatch('input');
+  assert.equal(app.elements.get('link-suggestions').hidden, true);
+  vm.runInContext("editor.value = '[[#pro'; editor.setSelectionRange(6, 6)", app.context); activeEditor.dispatch('input');
+  assert.equal(app.elements.get('link-suggestions').attributes['aria-label'], 'Notizverknüpfungen');
+  assert.ok(app.elements.get('link-suggestions').children.every(item => !item.textContent.startsWith('#projekt')));
+});
 
 test('Tabs bewahren parallele Entwürfe und speichern inaktive Dateien automatisch', async () => {
   const a = file('a.md', '# A'), b = file('b.md', '# B');

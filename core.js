@@ -58,6 +58,76 @@ const FolioCore = (() => {
     });
     return results;
   }
+  const tagName = /^(?=[\p{L}\p{N}_/-]*[\p{L}_-])[\p{L}\p{N}_-]+(?:\/[\p{L}\p{N}_-]+)*$/u;
+  const tagKey = name => name.toLocaleLowerCase('de');
+  function inlineTags(text) {
+    // Mask constructs that can contain literal # characters, while preserving offsets.
+    const masked = text.split('');
+    function mask(start, end) { for (let i = start; i < end; i++) masked[i] = ' '; }
+    const protectedSyntax = /(`+)([\s\S]*?)\1|!?\[\[[^\]\n]*\]\]|!?\[[^\]\n]*\]\([^\n)]*\)|(?:[a-z][a-z\d+.-]*:\/\/|www\.)[^\s<>]+|<!--[\s\S]*?-->/gi;
+    let match;
+    while ((match = protectedSyntax.exec(text))) {
+      // Link labels remain ordinary text; only their destination is excluded.
+      if (/^\[[^[]/.test(match[0]) && match[0].includes('](')) {
+        const start = match.index + match[0].indexOf(']('); mask(start, protectedSyntax.lastIndex);
+      } else mask(match.index, protectedSyntax.lastIndex);
+    }
+    const result = [], pattern = /#[\p{L}\p{N}_/-]+/gu, source = masked.join('');
+    while ((match = pattern.exec(source))) {
+      const start = match.index, before = text[start - 1] || '';
+      if (before && /[\p{L}\p{N}_/#]/u.test(before)) continue;
+      let slashes = 0; for (let i = start - 1; i >= 0 && text[i] === '\\'; i--) slashes++;
+      if (slashes % 2) continue;
+      const name = match[0].slice(1);
+      if (!tagName.test(name)) continue;
+      result.push({ name, start, end: pattern.lastIndex });
+    }
+    return result;
+  }
+  function yamlTagValues(raw) {
+    const value = raw.trim();
+    if (!value) return [];
+    let parts;
+    if (value.startsWith('[')) {
+      if (!/^\[[\s\S]*\]\s*(?:#.*)?$/.test(value)) return [];
+      const content = value.slice(1, value.lastIndexOf(']'));
+      parts = content.match(/(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^,])+/g) || [];
+    } else parts = [value.replace(/\s+#.*$/, '')];
+    return parts.map(part => scalar(part)).filter(item => item !== null).map(item => item.replace(/^#/, '')).filter(item => tagName.test(item));
+  }
+  function findTags(text) {
+    const lines = text.split(/\r?\n/), found = []; let firstBody = 0;
+    if (lines[0] === '---') {
+      const end = lines.indexOf('---', 1);
+      if (end !== -1) {
+        firstBody = end + 1; let list = false;
+        for (let i = 1; i < end; i++) {
+          const field = lines[i].match(/^tags:\s*(.*)$/);
+          if (field) { list = !field[1].trim(); for (const name of yamlTagValues(field[1])) found.push({ name, line: i + 1, context: lines[i].trim(), source: 'yaml' }); continue; }
+          const item = list && lines[i].match(/^\s+-\s+(.+)$/);
+          if (item) for (const name of yamlTagValues(item[1])) found.push({ name, line: i + 1, context: lines[i].trim(), source: 'yaml' });
+          else if (!/^\s*(?:#.*)?$/.test(lines[i])) list = false;
+        }
+      }
+    }
+    let fence = null, listContext = false, comment = false;
+    for (let i = firstBody; i < lines.length; i++) {
+      const original = lines[i], line = original.replace(/^ {0,3}(?:> ?)+/, '');
+      const marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      if (marker) { if (!fence) fence = marker[1]; else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = null; continue; }
+      if (fence) continue;
+      if (!line.trim()) { listContext = false; continue; }
+      const item = line.match(/^( *)(?:[-+*]|\d+[.)])\s+/);
+      if (/^(?: {4}|\t)/.test(line) && !listContext) continue;
+      if (item) listContext = true; else if (!/^(?: {4}|\t)/.test(line)) listContext = false;
+      let visible = line, offset = 0;
+      if (comment) { const close = visible.indexOf('-->'); if (close < 0) continue; offset = close + 3; visible = visible.slice(offset); comment = false; }
+      const open = visible.indexOf('<!--');
+      if (open >= 0 && visible.indexOf('-->', open + 4) < 0) { visible = visible.slice(0, open); comment = true; }
+      for (const tag of inlineTags(visible)) found.push({ ...tag, start: tag.start + offset + original.length - line.length, end: tag.end + offset + original.length - line.length, line: i + 1, context: original.trim(), source: 'inline' });
+    }
+    return found;
+  }
   function inlineLinks(text) {
     const found = [];
     // Consume code and images first so their content is never mistaken for a link.
@@ -147,6 +217,6 @@ const FolioCore = (() => {
       lines[link.line - 1] = line.slice(0, link.start) + replacement + line.slice(link.end); count++;
     } return { text: lines.join(''), count };
   }
-  return { statuses, priorities, parseTicket, setTicketStatus, findTodos, inlineLinks, findLinks, resolveLink, headings, anchorLine, rewriteLinks };
+  return { statuses, priorities, parseTicket, setTicketStatus, findTodos, inlineTags, findTags, tagKey, inlineLinks, findLinks, resolveLink, headings, anchorLine, rewriteLinks };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = FolioCore;
