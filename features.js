@@ -88,13 +88,20 @@ function renderEditor() {
   $('editor-highlight').innerHTML = highlightMarkdown(editor.value);
   if (preferences.lines) renderLineNumbers();
   const outline = $('outline'); if (!preferences.outline) { syncScroll(); return; } outline.replaceChildren();
-  let inFence = false;
-  editor.value.split('\n').forEach((line, index) => {
-    if (/^ {0,3}(`{3,}|~{3,})/.test(line)) { inFence = !inFence; return; }
-    if (inFence) return;
-    const match = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/); if (!match) return;
-    const button = document.createElement('button'); button.textContent = match[2]; button.style.paddingLeft = `${8 + (match[1].length - 1) * 12}px`; button.onclick = () => focusLine(index + 1); outline.append(button);
-  });
+  const sourceLines = editor.value.split(/\r?\n/);
+  for (const heading of FolioCore.headings(editor.value)) {
+    const level = (sourceLines[heading.line - 1].match(/^#+/) || ['#'])[0].length;
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = heading.title;
+    button.style.paddingLeft = `${8 + (level - 1) * 12}px`;
+    button.onclick = () => {
+      if (mode !== 'preview') focusLine(heading.line);
+      if (mode === 'preview' || mode === 'split') {
+        const target = $('preview').querySelector(`[data-heading-line="${heading.line}"]`);
+        if (target) { target.scrollIntoView({ block: 'start' }); if (mode === 'preview') target.focus({ preventScroll: true }); }
+      }
+    };
+    outline.append(button);
+  }
   if (!outline.children.length) { const empty = document.createElement('span'); empty.textContent = 'Keine Überschriften'; outline.append(empty); }
   syncScroll();
 }
@@ -127,7 +134,7 @@ function applyFormat(kind) {
 }
 document.querySelectorAll('[data-format]').forEach(button => { button.addEventListener('mousedown', e => e.preventDefault()); button.addEventListener('click', () => applyFormat(button.dataset.format)); });
 $('toggle-lines').onclick = () => { preferences.lines = !preferences.lines; storePreferences(); updateEditorOptions(); };
-$('toggle-outline').onclick = () => { preferences.outline = !preferences.outline; storePreferences(); updateEditorOptions(); };
+$('toggle-outline').onclick = () => { preferences.outline = !preferences.outline; storePreferences(); updateEditorOptions(); if (preferences.outline) renderEditor(); };
 function updateEditorOptions() { $('line-numbers').hidden = !preferences.lines; $('toggle-lines').setAttribute('aria-pressed', String(!!preferences.lines)); if (preferences.lines) renderLineNumbers(); $('outline').hidden = !preferences.outline; $('toggle-outline').setAttribute('aria-expanded', String(!!preferences.outline)); }
 
 let recentPaths = [], recentWorkspace = null, recentWrites = Promise.resolve();
@@ -213,7 +220,7 @@ window.addEventListener('keydown', event => {
   if (key === 'p') { event.preventDefault(); openSearch(); }
   if (document.activeElement === editor && ['b', 'i', 'k'].includes(key)) { event.preventDefault(); applyFormat({ b: 'bold', i: 'italic', k: 'link' }[key]); }
 });
-window.FolioFeatures = { renderEditor, showEditor, bindEditor: bindFeatureEditor, renameRecent, documentOpened() { if (area !== 'preview') $('preview-tab').click(); if (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) { sidebarHidden = true; preferences.sidebarHidden = true; storePreferences(); applyLayout(); } rememberDocument(); if (window.GraphitEnhancements) window.GraphitEnhancements.documentOpened(); }, workspaceChanged, selectArea(name) { area = name; applyLayout(); } };
+window.FolioFeatures = { renderEditor, showEditor, bindEditor: bindFeatureEditor, renameRecent, documentOpened() { if (area !== 'preview') $('preview-tab').click(); if (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) { sidebarHidden = true; preferences.sidebarHidden = true; storePreferences(); applyLayout(); } rememberDocument(); if (window.GraphitEnhancements) window.GraphitEnhancements.documentOpened(); }, workspaceChanged, selectArea(name) { area = name; $('outline-controls').hidden = name !== 'preview'; applyLayout(); if (name === 'preview' && preferences.outline) renderEditor(); } };
 updateEditorOptions(); applyLayout(); renderEditor(); if (state.directory) workspaceChanged();
 
 // Motion feedback is decorative; actions never wait for an animation.

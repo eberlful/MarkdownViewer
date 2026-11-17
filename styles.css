@@ -135,6 +135,9 @@ button:disabled { cursor: not-allowed; }
 .format-toolbar button { min-width: 30px; padding: 6px 8px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 12px; }
 .format-toolbar button:hover, .format-toolbar button[aria-pressed="true"], .format-toolbar button[aria-expanded="true"] { background: var(--hover); color: var(--text); }
 .toolbar-spacer { flex: 1; }
+.outline-controls { flex: 0 0 auto; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; }
+.outline-controls > button { border: 0; padding: 7px 12px; background: transparent; color: var(--text); }
+.starting .outline-controls { display: none; }
 .outline { max-height: 160px; overflow: auto; padding: 8px; border-bottom: 1px solid var(--border); }
 .outline button { display: block; width: 100%; padding: 5px 8px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 12px; text-align: left; }
 .outline button:hover { background: var(--hover); color: var(--text); }

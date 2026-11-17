@@ -102,7 +102,7 @@ function markdown(text, lineOffset = 0) {
     if (/^\s*<!--\s*kanban:(?:start|end)\s*-->\s*$/.test(line)) { flushParagraph(); flushQuote(); closeList(); continue; }
     const q = line.match(/^\s*>\s?(.*)$/); if (q) { flushParagraph(); closeList(); if (!quote.length) quoteStart = lineOffset + index; quote.push(q[1]); continue; } flushQuote();
     if (!line.trim()) { flushParagraph(); closeList(); continue; }
-    const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/); if (heading) { flushParagraph(); closeList(); const n = heading[1].length; out += `<h${n}>${inline(heading[2])}</h${n}>`; continue; }
+    const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/); if (heading) { flushParagraph(); closeList(); const n = heading[1].length; out += `<h${n} data-heading-line="${lineOffset + index + 1}" tabindex="-1">${inline(heading[2])}</h${n}>`; continue; }
     if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flushParagraph(); closeList(); out += '<hr>'; continue; }
     const item = line.match(/^\s*(?:([-+*])\s+|(\d+)\.\s+)(.*)$/); if (item) { flushParagraph(); const type = item[2] ? 'ol' : 'ul'; if (list !== type) { closeList(); list = type; out += `<${type}>`; } const task = item[3].match(/^\[([ xX])\]\s*(.*)$/); out += task ? `<li><input type="checkbox" data-task-line="${lineOffset + index + 1}" aria-label="Aufgabe ${task[1].toLowerCase() === 'x' ? 'wieder öffnen' : 'erledigen'}" ${task[1].toLowerCase() === 'x' ? 'checked' : ''}> ${inline(task[2])}</li>` : `<li>${inline(item[3])}</li>`; continue; }
     closeList(); paragraph.push(line.trim());

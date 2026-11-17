@@ -398,3 +398,28 @@ test('Anker funktionieren auch in einzeln geöffneten Dokumenten', () => {
   assert.match(vm.runInContext("inline('[weiter](#kapitel)')", app.context), /data-folio-anchor="kapitel"/);
   assert.match(vm.runInContext("inline('[fehlt](#nicht-da)')", app.context), /Überschrift nicht gefunden/);
 });
+
+test('Gliederung erscheint sofort und folgt dem aktuellen Dokument', async () => {
+  const app = harness();
+  vm.runInContext("editor.value = '# Titel\\n\\n```md\\n# Kein Titel\\n```\\n## Abschnitt'; changed()", app.context);
+  app.elements.get('toggle-outline').click();
+  const outline = app.elements.get('outline');
+  assert.equal(outline.hidden, false);
+  assert.deepEqual(outline.children.map(item => item.textContent), ['Titel', 'Abschnitt']);
+  assert.equal(app.elements.get('toggle-outline').attributes['aria-expanded'], 'true');
+  vm.runInContext("editor.value = '# Geändert'; changed()", app.context);
+  assert.deepEqual(outline.children.map(item => item.textContent), ['Geändert']);
+  app.elements.get('board-tab').click();
+  assert.equal(app.elements.get('outline-controls').hidden, true);
+  app.elements.get('preview-tab').click();
+  assert.equal(app.elements.get('outline-controls').hidden, false);
+  app.elements.get('toggle-outline').click();
+  assert.equal(outline.hidden, true);
+});
+
+test('Vorschau kennzeichnet gleiche Überschriften mit ihrer jeweiligen Quellzeile', () => {
+  const app = harness();
+  const html = vm.runInContext("markdown('# Titel\\n\\n# Titel')", app.context);
+  assert.match(html, /data-heading-line="1"/);
+  assert.match(html, /data-heading-line="3"/);
+});
