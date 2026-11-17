@@ -21,6 +21,8 @@ function applyLayout() {
   document.querySelectorAll('[data-mode]').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.mode === mode && !boardOpen)); });
   $('splitter').setAttribute('aria-valuenow', String(Math.round(split)));
   $('app').classList.toggle('sidebar-hidden', sidebarHidden);
+  $('sidebar').inert = sidebarHidden;
+  if (window.GraphitMotion) window.GraphitMotion.progress();
   $('toggle-sidebar').setAttribute('aria-expanded', String(!sidebarHidden));
 }
 function setMode(next) {
@@ -213,3 +215,40 @@ window.addEventListener('keydown', event => {
 });
 window.FolioFeatures = { renderEditor, showEditor, bindEditor: bindFeatureEditor, renameRecent, documentOpened() { if (area !== 'preview') $('preview-tab').click(); if (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) { sidebarHidden = true; preferences.sidebarHidden = true; storePreferences(); applyLayout(); } rememberDocument(); if (window.GraphitEnhancements) window.GraphitEnhancements.documentOpened(); }, workspaceChanged, selectArea(name) { area = name; applyLayout(); } };
 updateEditorOptions(); applyLayout(); renderEditor(); if (state.directory) workspaceChanged();
+
+// Motion feedback is decorative; actions never wait for an animation.
+window.GraphitMotion = (() => {
+  const reduced = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function progress() {
+    const view = $('preview-view'), article = $('preview'), bar = $('reading-progress');
+    if (!view || !article || !bar || !view.getBoundingClientRect || view.hidden || $('result-panel').hidden) return;
+    const viewport = view.getBoundingClientRect(), documentBox = article.getBoundingClientRect();
+    const end = Math.max(0, view.scrollTop + documentBox.bottom - viewport.bottom);
+    const fraction = end > 0 ? Math.min(1, Math.max(0, view.scrollTop / end)) : 1;
+    bar.style.transform = `scaleX(${fraction})`;
+  }
+  function line(number) {
+    const lines = $('editor-highlight').querySelectorAll('.syntax-line');
+    const target = lines[number - 1]; if (!target) return;
+    target.classList.remove('jump-highlight'); void target.offsetWidth; target.classList.add('jump-highlight');
+  }
+  function saved() { const el = $('save-status'); el.classList.remove('save-confirmed'); void el.offsetWidth; el.classList.add('save-confirmed'); setTimeout(() => el.classList.remove('save-confirmed'), 1000); }
+  function card(path, origin) {
+    const target = [...document.querySelectorAll('.card')].find(card => card.dataset.path === path);
+    if (!target || !target.getBoundingClientRect || !target.animate || reduced()) return;
+    const end = target.getBoundingClientRect();
+    target.animate([{ transform: `translate(${origin.left-end.left}px, ${origin.top-end.top}px)` }, { transform: 'translate(0, 0)' }], { duration: 220, easing: 'ease-out' });
+  }
+  function todo(ghost, rect) {
+    if (reduced() || !document.body || !ghost.animate) return;
+    ghost.inert = true; ghost.setAttribute('aria-hidden', 'true');
+    Object.assign(ghost.style, { position: 'fixed', left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, zIndex: '4', pointerEvents: 'none', background: 'var(--surface)' });
+    document.body.append(ghost);
+    const animation = ghost.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateX(8px)' }], { duration: 200, easing: 'ease-out' });
+    animation.onfinish = () => ghost.remove(); animation.oncancel = () => ghost.remove();
+  }
+  const view = $('preview-view'); view.addEventListener('scroll', progress);
+  view.addEventListener('load', progress, true); window.addEventListener('resize', progress);
+  if (window.ResizeObserver) { const observer = new window.ResizeObserver(progress); observer.observe(view); observer.observe($('preview')); }
+  return { progress, line, saved, card, todo };
+})();

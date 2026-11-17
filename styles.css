@@ -375,3 +375,37 @@ button:disabled { cursor: not-allowed; }
 
 .markdown table { border-collapse: collapse; width: 100%; margin: 1em 0; }
 .markdown th, .markdown td { border: 1px solid var(--border, #888); padding: .45em .65em; }
+
+/* Motion feedback */
+.result-panel { position: relative; }
+.reading-progress { position: absolute; z-index: 2; top: 0; left: 0; right: 0; height: 3px; background: var(--accent-strong); transform: scaleX(0); transform-origin: left; pointer-events: none; }
+#preview-view[hidden] ~ .reading-progress, .result-panel:has(#preview-view[hidden]) .reading-progress { display: none; }
+.card { transition: box-shadow 180ms ease-out, transform 180ms ease-out, opacity 180ms ease-out; }
+.card.dragging { opacity: .55; transform: scale(.98); box-shadow: 0 8px 18px #0003; }
+.column { transition: background-color 180ms ease-out, outline-color 180ms ease-out; }
+.column.drag-over { background: var(--accent-soft); }
+.checked-motion { animation: check-pop 200ms ease-out; }
+.todo-row.completing { animation: task-done 200ms ease-out both; pointer-events: none; }
+.jump-highlight { animation: jump-glow 1.2s ease-out; }
+.save-confirmed.saved i { animation: save-pop 700ms ease-out; }
+#search-dialog[open], #command-dialog[open] { animation: dialog-enter 180ms ease-out; }
+#search-dialog[open]::backdrop, #command-dialog[open]::backdrop { animation: backdrop-enter 180ms ease-out; }
+.tree-summary::before { display: inline-block; content: '▸'; margin-right: 5px; transition: transform 180ms ease-out; }
+details[open] > .tree-summary::before { transform: rotate(90deg); }
+details[open] > .tree-children { animation: tree-enter 180ms ease-out; }
+.sidebar { overflow: hidden; transition: flex-basis 180ms ease-out, width 180ms ease-out, padding 180ms ease-out, opacity 180ms ease-out, transform 180ms ease-out; }
+.sidebar-hidden .sidebar { display: flex; flex-basis: 0; width: 0; padding-left: 0; padding-right: 0; border-right-width: 0; opacity: 0; pointer-events: none; }
+@media (max-width: 700px) { .sidebar-hidden .sidebar { width: 250px; transform: translateX(-100%); } }
+@keyframes check-pop { 50% { transform: scale(1.2); } }
+@keyframes task-done { to { opacity: 0; transform: translateX(8px); } }
+@keyframes jump-glow { 0%, 30% { background: var(--accent-soft); } 100% { background: transparent; } }
+@keyframes save-pop { 40% { transform: scale(1.6); box-shadow: 0 0 0 4px var(--accent-soft); } }
+@keyframes dialog-enter { from { opacity: 0; transform: translateY(-8px); } }
+@keyframes backdrop-enter { from { opacity: 0; } }
+@keyframes tree-enter { from { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .card, .column, .tree-summary::before { transition: none; }
+  .checked-motion, .todo-row.completing, .jump-highlight, .save-confirmed.saved i, #search-dialog[open], #command-dialog[open], #search-dialog[open]::backdrop, #command-dialog[open]::backdrop, details[open] > .tree-children { animation: none; }
+}
+.save-confirmed.saved i { position: relative; background: var(--success); }
+.save-confirmed.saved i::after { position: absolute; left: -1px; top: -4px; content: '✓'; color: var(--success); font-size: 12px; font-style: normal; font-weight: 700; }

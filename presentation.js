@@ -13,7 +13,7 @@
     previous.disabled = index <= 0; next.disabled = index >= slides.length - 1;
     content.scrollTop = 0;
   }
-  function move(delta) { const target = Math.max(0, Math.min(slides.length - 1, index + delta)); if (target !== index) { index = target; render(); } }
+  function move(delta) { const target = Math.max(0, Math.min(slides.length - 1, index + delta)); if (target !== index) { index = target; render(); if (slide.animate && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) slide.animate([{opacity: 0, transform: `translateX(${delta > 0 ? 8 : -8}px)`}, {opacity: 1, transform: 'translateX(0)'}], {duration: 220, easing: 'ease-out'}); } }
   function close() {
     if (!dialog.open) return;
     dialog.close();
