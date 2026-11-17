@@ -147,7 +147,8 @@ button:disabled { cursor: not-allowed; }
 .editor-layer textarea { min-height: 0; overflow: auto; resize: none; background: transparent; color: transparent; caret-color: var(--text); -webkit-text-fill-color: transparent; }
 .editor-layer textarea:focus { outline: none; }
 .editor-layer textarea:focus-visible { box-shadow: inset 0 0 0 2px var(--accent-strong); }
-.editor-layer textarea::selection { background: var(--selected); }
+/* The editor text is painted by the highlighted layer underneath the textarea. */
+.editor-layer textarea::selection { background: rgba(151, 118, 230, .28); }
 .syntax-line { display: block; min-height: 1.8em; }
 .syntax-heading { color: var(--accent); font-weight: 700; }
 .syntax-quote { color: var(--muted); }

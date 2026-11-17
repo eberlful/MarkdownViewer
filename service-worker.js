@@ -2,7 +2,7 @@
 
 // Increment this version whenever the cached application files change.
 const CACHE_PREFIX = `folio-shell:${encodeURIComponent(self.registration.scope)}:`;
-const CACHE_NAME = `${CACHE_PREFIX}v7`;
+const CACHE_NAME = `${CACHE_PREFIX}v8`;
 const ASSETS = [
   './', './index.html', './styles.css', './core.js', './app.js', './features.js',
   './pwa.js', './presentation.js', './workspace.js', './tags.js', './tabs.js', './enhancements.js', './theme.js', './assets/graphit-mark.svg', './manifest.webmanifest', './pwa-icons/icon-192.png',
