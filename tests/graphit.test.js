@@ -40,9 +40,9 @@ function makeDB() {
   } };
 }
 function file(name, contents) {
-  return { kind: 'file', name, text: contents, async getFile() { return { text: async () => this.text }; }, async createWritable() { const self = this; return { async write(text) { self.text = text; }, async close() {} }; } };
+  return { kind: 'file', name, text: contents, async getFile() { return { lastModified: 100, text: async () => this.text }; }, async createWritable() { const self = this; return { async write(text) { self.text = text; }, async close() {} }; } };
 }
-function directory(name, entries) { return { kind: 'directory', name, entriesMap: entries, async *entries() { yield* Object.entries(entries); }, async getDirectoryHandle(name, options = {}) { if (!entries[name] && options.create) entries[name] = directory(name, {}); if (!entries[name]) throw Object.assign(new Error('missing'), { name: 'NotFoundError' }); return entries[name]; }, async getFileHandle(name, options = {}) { if (!entries[name] && options.create) entries[name] = file(name, ''); if (!entries[name]) throw Object.assign(new Error('missing'), { name: 'NotFoundError' }); return entries[name]; } }; }
+function directory(name, entries) { return { kind: 'directory', name, entriesMap: entries, async *entries() { yield* Object.entries(entries); }, async getDirectoryHandle(name, options = {}) { if (!entries[name] && options.create) entries[name] = directory(name, {}); if (!entries[name]) throw Object.assign(new Error('missing'), { name: 'NotFoundError' }); return entries[name]; }, async getFileHandle(name, options = {}) { if (!entries[name] && options.create) entries[name] = file(name, ''); if (!entries[name]) throw Object.assign(new Error('missing'), { name: 'NotFoundError' }); return entries[name]; }, async removeEntry(name) { delete entries[name]; } }; }
 function harness(indexedDB = makeDB()) {
   const elements = new Map(), timers = new Map(), storage = new Map(); let timerId = 0;
   const document = {
@@ -53,9 +53,9 @@ function harness(indexedDB = makeDB()) {
   const layer = new Element(); layer.append(document.getElementById('editor'));
   const localStorage = { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) };
   const events = {};
-  const window = { indexedDB, events, addEventListener(type, fn) { (events[type] ||= []).push(fn); }, confirm() { return true; }, matchMedia() { return { matches: false }; } };
+  const window = { indexedDB, events, addEventListener(type, fn) { (events[type] ||= []).push(fn); }, confirm() { return true; }, alert() {}, matchMedia() { return { matches: false }; } };
   const context = vm.createContext({ document, window, localStorage, FolioCore: core, console, prompt() {}, confirm() {}, getComputedStyle() { return { lineHeight: '20' }; }, setTimeout(fn) { const id = ++timerId; timers.set(id, fn); return id; }, clearTimeout(id) { timers.delete(id); } });
-  for (const source of ['app.js', 'features.js', 'tabs.js', 'enhancements.js']) vm.runInContext(fs.readFileSync(source, 'utf8'), context, { filename: source });
+  for (const source of ['app.js', 'features.js', 'tabs.js', 'enhancements.js', 'workspace.js']) vm.runInContext(fs.readFileSync(source, 'utf8'), context, { filename: source });
   return { context, elements, timers, async runTimers() { const callbacks = [...timers.values()]; timers.clear(); for (const callback of callbacks) await callback(); } };
 }
 async function openWorkspace(app, root) { app.context.root = root; await vm.runInContext('state.directory = root; refreshFiles()', app.context); }
@@ -222,4 +222,99 @@ test('Arbeitsbereichswechsel erhält den Speicherort neuer ungespeicherter Entw�
   app.context.next = next;
   assert.equal(await vm.runInContext('activateWorkspace(next, workspaceEpoch)', app.context), false);
   assert.equal(vm.runInContext('state.directory === root && state.path', app.context), 'neu.md');
+});
+
+test('Projektübersicht und Dokumentverbindungen nutzen ungespeicherte Inhalte', async () => {
+  const ticket = file('t.md', '---\ntitle: Aufgabe\nstatus: offen\npriority: mittel\n---\n[[notiz]]');
+  const note = file('notiz.md', '# Notiz\n- [ ] Offen');
+  const root = directory('root', { P: directory('P', { tickets: directory('tickets', { 't.md': ticket }), 'notiz.md': note }) });
+  const app = harness(); await openWorkspace(app, root);
+  await vm.runInContext("openProjectFile(state.files.find(f => f.name === 'notiz.md'))", app.context);
+  const links = app.elements.get('related-files').children[0].children;
+  assert.equal(links[1].textContent, 'P/tickets/t.md');
+  vm.runInContext("editor.value = '# Notiz\\n- [ ] Neuer Eintrag'; edited()", app.context);
+  const groups = app.elements.get('projects-content').children;
+  assert.ok(groups[1].children.some(node => node.textContent && node.textContent.includes('Neuer Eintrag')));
+});
+
+test('Schnellerfassung schreibt Inbox und hält Eingaben bei Konflikten zurück', async () => {
+  const inbox = file('Inbox.md', '# Inbox\n');
+  const app = harness(); await openWorkspace(app, directory('root', { 'Inbox.md': inbox }));
+  vm.runInContext("$('capture-kind').value = 'task'; $('capture-text').value = 'Termin planen'", app.context);
+  await app.elements.get('capture-form').onsubmit({ preventDefault() {} });
+  assert.match(inbox.text, /- \[ \] Termin planen/);
+  inbox.text = '# Extern geändert\n'; app.elements.get('capture-text').value = 'Nicht verlieren';
+  await app.elements.get('capture-form').onsubmit({ preventDefault() {} });
+  assert.equal(app.elements.get('capture-text').value, 'Nicht verlieren');
+  assert.match(app.elements.get('capture-error').textContent, /extern geändert/);
+  assert.doesNotMatch(inbox.text, /Nicht verlieren/);
+});
+
+test('Umbenennen aktualisiert Links und geöffneten Tab', async () => {
+  const target = file('alt.md', '# Abschnitt'), source = file('quelle.md', '[Ziel](alt.md#abschnitt)');
+  const project = directory('P', { 'alt.md': target, 'quelle.md': source });
+  const app = harness(); await openWorkspace(app, directory('root', { P: project }));
+  await vm.runInContext("openProjectFile(state.files.find(f => f.name === 'alt.md'))", app.context);
+  app.context.prompt = () => 'neu.md';
+  await vm.runInContext("window.GraphitWorkspace.rename(state.files.find(f => f.name === 'alt.md'))", app.context);
+  assert.equal(project.entriesMap['alt.md'], undefined);
+  assert.equal(project.entriesMap['neu.md'].text, '# Abschnitt');
+  assert.equal(source.text, '[Ziel](./neu.md#abschnitt)');
+  assert.equal(vm.runInContext('state.path', app.context), 'P/neu.md');
+});
+
+test('Konfliktdialog zeigt erneute externe Änderungen vor der Auswahl', async () => {
+  const target = file('a.md', 'Extern 1'); const app = harness(); app.context.target = target;
+  const pending = vm.runInContext("window.GraphitWorkspace.resolveConflict(target, 'Entwurf', 'Extern 1')", app.context);
+  target.text = 'Extern 2'; app.elements.get('conflict-save').onclick();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.elements.get('conflict-disk').value, 'Extern 2');
+  app.elements.get('conflict-load').onclick();
+  const result = await pending; assert.equal(result.choice, 'disk'); assert.equal(result.disk, 'Extern 2');
+});
+
+test('Umbenennen schützt Änderungen und bereits vorhandene Ziele', async () => {
+  const target = file('alt.md', 'Original'), source = file('quelle.md', '[[alt]]'), existing = file('neu.md', 'Erhalten');
+  const project = directory('P', { 'alt.md': target, 'quelle.md': source, 'neu.md': existing });
+  const app = harness(); await openWorkspace(app, directory('root', { P: project }));
+  app.context.prompt = () => 'neu.md';
+  await vm.runInContext("window.GraphitWorkspace.rename(state.files.find(f => f.name === 'alt.md'))", app.context);
+  assert.equal(existing.text, 'Erhalten'); assert.equal(target.text, 'Original');
+  await vm.runInContext("openProjectFile(state.files.find(f => f.name === 'quelle.md'))", app.context);
+  vm.runInContext("editor.value = '[[alt]] Entwurf'; edited()", app.context); app.context.prompt = () => 'anders.md';
+  await vm.runInContext("window.GraphitWorkspace.rename(state.files.find(f => f.name === 'alt.md'))", app.context);
+  assert.equal(project.entriesMap['anders.md'], undefined); assert.equal(source.text, '[[alt]]');
+  assert.equal(vm.runInContext('editor.value', app.context), '[[alt]] Entwurf');
+});
+
+test('Speicherkonflikt erlaubt das Laden der externen Version', async () => {
+  const target = file('a.md', 'Original'); const app = harness();
+  await openWorkspace(app, directory('root', { 'a.md': target }));
+  await vm.runInContext("openProjectFile(state.files.find(f => f.name === 'a.md'))", app.context);
+  vm.runInContext("editor.value = 'Entwurf'; edited()", app.context); target.text = 'Extern';
+  const saving = vm.runInContext('saveDocument(true)', app.context);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(app.elements.get('conflict-draft').value, 'Entwurf');
+  assert.equal(app.elements.get('conflict-disk').value, 'Extern');
+  app.elements.get('conflict-load').onclick(); await saving;
+  assert.equal(vm.runInContext('editor.value', app.context), 'Extern'); assert.equal(target.text, 'Extern');
+  assert.equal(vm.runInContext('state.dirty', app.context), false);
+});
+
+test('Fehler beim Umbenennen lässt Original und Kopie bestehen', async () => {
+  const target = file('alt.md', 'Original'), source = file('quelle.md', '[[alt]]');
+  source.createWritable = async () => { throw new Error('Kein Schreibzugriff'); };
+  const project = directory('P', { 'alt.md': target, 'quelle.md': source });
+  const app = harness(); await openWorkspace(app, directory('root', { P: project }));
+  let message = ''; app.context.window.alert = text => { message = text; }; app.context.prompt = () => 'neu.md';
+  await vm.runInContext("window.GraphitWorkspace.rename(state.files.find(f => f.name === 'alt.md'))", app.context);
+  assert.equal(target.text, 'Original'); assert.equal(project.entriesMap['neu.md'].text, 'Original');
+  assert.equal(source.text, '[[alt]]'); assert.match(message, /Original sind vorhanden/);
+});
+
+test('Anker funktionieren auch in einzeln geöffneten Dokumenten', () => {
+  const app = harness();
+  vm.runInContext("state.name = 'einzeln.md'; state.path = ''; state.folderTarget = false; editor.value = '# Kapitel\\n\\n[weiter](#kapitel)'", app.context);
+  assert.match(vm.runInContext("inline('[weiter](#kapitel)')", app.context), /data-folio-anchor="kapitel"/);
+  assert.match(vm.runInContext("inline('[fehlt](#nicht-da)')", app.context), /Überschrift nicht gefunden/);
 });

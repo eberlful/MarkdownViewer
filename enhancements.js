@@ -58,6 +58,8 @@
   document.querySelectorAll('[data-mode], [role="tab"]').forEach(button => button.addEventListener('click', hideStart));
 
   const commands = [
+    { id: 'capture', label: 'Schnell erfassen', run: () => $('quick-capture').click() },
+    { id: 'projects', label: 'Projektübersicht öffnen', run: () => $('projects-tab').click() },
     { id: 'new', label: 'Neue Notiz', run: () => $('new-file').click() },
     { id: 'folder', label: 'Arbeitsbereich öffnen', run: () => $('open-folder').click() },
     { id: 'search', label: 'Dateien und Inhalte suchen', run: () => $('open-search').click() },
@@ -139,6 +141,6 @@
     element.addEventListener('blur', () => { setTimeout(closeSuggestions, 150); });
   }
   bindEditor(editor);
-  window.GraphitEnhancements = { bindEditor, workspaceChanged, changed: renderQuickFiles, documentOpened() { hideStart(); renderQuickFiles(); } };
+  window.GraphitEnhancements = { bindEditor, workspaceChanged, renameFavorite(oldPath, newPath) { favorites = favorites.map(path => path === oldPath ? newPath : path); storeFavorites(); renderQuickFiles(); }, changed: renderQuickFiles, documentOpened() { hideStart(); renderQuickFiles(); } };
   showStart();
 })();

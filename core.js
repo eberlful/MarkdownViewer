@@ -84,12 +84,13 @@ const FolioCore = (() => {
       const item = line.match(/^( *)(?:[-+*]|\d+[.)])\s+/);
       if (/^(?: {4}|\t)/.test(line) && !(item && listContext)) return;
       if (item) listContext = true; else if (!/^(?: {4}|\t)/.test(line)) listContext = false;
-      for (const link of inlineLinks(line)) results.push({ ...link, line: index + 1, context: original.trim() });
+      for (const link of inlineLinks(line)) results.push({ ...link, start: link.start + original.length - line.length, end: link.end + original.length - line.length, line: index + 1, context: original.trim() });
     });
     return results;
   }
   function resolveLink(source, target, type, files) {
-    if (type === 'markdown' && (/^[a-z][a-z\d+.-]*:/i.test(target) || target.startsWith('//') || target.startsWith('#'))) return { kind: 'external' };
+    if (target.startsWith('#')) return source ? { kind: 'local', path: source } : { kind: 'invalid', reason: 'Kein Dokument geöffnet' };
+    if (type === 'markdown' && (/^[a-z][a-z\d+.-]*:/i.test(target) || target.startsWith('//'))) return { kind: 'external' };
     let path = target.split('#')[0].split('?')[0];
     try { path = decodeURIComponent(path); } catch { return { kind: 'invalid', reason: 'Ungültige Kodierung im Pfad' }; }
     if (type === 'markdown' && !/\.(?:md|markdown)$/i.test(path)) return { kind: 'external' };
@@ -110,6 +111,42 @@ const FolioCore = (() => {
     if (matches[0].error) return { kind: 'invalid', reason: 'Datei konnte nicht gelesen werden' };
     return { kind: 'local', path: matches[0].path };
   }
-  return { statuses, priorities, parseTicket, setTicketStatus, findTodos, inlineLinks, findLinks, resolveLink };
+  function headings(text) {
+    const found = [], counts = new Map(), used = new Set(); let fence = null;
+    text.split(/\r?\n/).forEach((line, index) => {
+      const marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      if (marker) { if (!fence) fence = marker[1]; else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = null; return; }
+      if (fence) return;
+      const match = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/); if (!match) return;
+      const base = match[2].toLowerCase().replace(/<[^>]*>/g, '').replace(/[^\p{L}\p{N}\s_-]/gu, '').trim().replace(/\s+/g, '-');
+      let count = counts.get(base) || 0, slug = count ? `${base}-${count}` : base;
+      while (used.has(slug)) slug = `${base}-${++count}`; counts.set(base, count + 1); used.add(slug);
+      found.push({ slug, line: index + 1, title: match[2] });
+    }); return found;
+  }
+  function anchorLine(text, fragment) {
+    let anchor; try { anchor = decodeURIComponent(fragment).toLowerCase(); } catch { return null; }
+    return headings(text).find(item => item.slug === anchor)?.line || null;
+  }
+  function relativePath(source, target) {
+    const from = source.split('/'); from.pop(); const to = target.split('/');
+    while (from.length && to.length && from[0] === to[0]) { from.shift(); to.shift(); }
+    const result = [...from.map(() => '..'), ...to].join('/'); return result.startsWith('../') ? result : `./${result}`;
+  }
+  function rewriteLinks(text, source, oldPath, newPath, files) {
+    const lines = text.split(/(?<=\n)/), links = findLinks(text).reverse(); let count = 0;
+    for (const link of links) {
+      const result = resolveLink(source, link.target, link.type, files); if (result.kind !== 'local' || result.path !== oldPath || link.target.startsWith('#')) continue;
+      const suffix = link.target.slice(link.target.search(/[#?]/) < 0 ? link.target.length : link.target.search(/[#?]/));
+      let path = relativePath(source, newPath);
+      if (link.type === 'wiki' && !/\.(?:md|markdown)$/i.test(link.target.split(/[?#]/)[0])) path = path.replace(/\.(?:md|markdown)$/i, '');
+      if (link.type === 'markdown') path = path.split('/').map(encodeURIComponent).join('/');
+      const line = lines[link.line - 1], token = line.slice(link.start, link.end);
+      let replacement = link.type === 'wiki' ? token.replace(/^(\[\[)[^|\]]+/, (_, prefix) => prefix + path + suffix) : token.replace(/(\]\()[^\s)]+/, (_, prefix) => prefix + path + suffix);
+      if (link.type === 'wiki' && !token.includes('|')) replacement = replacement.slice(0, -2) + `|${link.label}]]`;
+      lines[link.line - 1] = line.slice(0, link.start) + replacement + line.slice(link.end); count++;
+    } return { text: lines.join(''), count };
+  }
+  return { statuses, priorities, parseTicket, setTicketStatus, findTodos, inlineLinks, findLinks, resolveLink, headings, anchorLine, rewriteLinks };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = FolioCore;

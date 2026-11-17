@@ -42,3 +42,19 @@ test('Verschachtelte Listenlinks erfassen, zitierte Codeblöcke auslassen', () =
   const links = core.findLinks('- Liste\n    - [[ziel]]\n\n> ```\n> [[code]]\n> ```');
   assert.deepEqual(links.map(link => link.target), ['ziel']);
 });
+
+test('Überschriftenanker sind eindeutig und ignorieren Codeblöcke', () => {
+  const text = '# Hallo Welt!\n```\n# Versteckt\n```\n## Hallo Welt!\n# Hallo Welt 1\n';
+  assert.equal(core.anchorLine(text, 'hallo-welt'), 1);
+  assert.equal(core.anchorLine(text, 'hallo-welt-1'), 5);
+  assert.equal(core.anchorLine(text, 'versteckt'), null);
+  assert.equal(core.resolveLink('p/a.md', '#hallo-welt', 'markdown', []).path, 'p/a.md');
+});
+
+test('Linkaktualisierung erhält Beschriftungen, Anker und Code', () => {
+  const files = [{ path: 'P/alt.md' }, { path: 'P/quell.md' }];
+  const original = '> [Text](alt.md#kapitel) und [[alt#kapitel]]\n`[[alt]]`\n```\n[[alt]]\n```';
+  const result = core.rewriteLinks(original, 'P/quell.md', 'P/alt.md', 'P/neu.md', files);
+  assert.equal(result.count, 2);
+  assert.equal(result.text, '> [Text](./neu.md#kapitel) und [[./neu#kapitel|alt#kapitel]]\n`[[alt]]`\n```\n[[alt]]\n```');
+});

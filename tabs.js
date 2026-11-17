@@ -124,6 +124,15 @@
       tab.element.value = text; tab.saved = text;
     }
   }
+  function renamed(oldPath, newPath, handle, text) {
+    snapshot(active);
+    for (const tab of tabs) {
+      if (tab.workspace !== state.directory || !tab.folderTarget || tab.path !== oldPath) continue;
+      tab.path = newPath; tab.name = newPath.split('/').pop(); tab.file = handle; tab.saved = text; tab.element.value = text; tab.dirty = false; tab.error = '';
+      if (tab === active) { for (const key of fields) state[key] = tab[key]; saveError = ''; }
+    }
+    capture();
+  }
   function workspaceWillChange() {
     snapshot(active); restoreGeneration++;
     for (const tab of tabs) if (tab.workspace === state.directory) { tab.workspace = null; tab.folderTarget = false; tab.path = ''; }
@@ -169,5 +178,5 @@
     } catch {} finally { if (generation === restoreGeneration) { restoring = false; capture(); } }
   }
   makeTab(editor); render();
-  window.GraphitTabs = { capture, prepareNew, selectPath, hasDirty, hasSaving, hasUnsavedNew, isDirty, textFor, workspaceFiles, reconcile, externalUpdate, workspaceWillChange, workspaceChanged };
+  window.GraphitTabs = { capture, prepareNew, selectPath, hasDirty, hasSaving, hasUnsavedNew, isDirty, textFor, workspaceFiles, reconcile, externalUpdate, renamed, workspaceWillChange, workspaceChanged };
 })();

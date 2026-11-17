@@ -154,6 +154,16 @@ function workspaceChanged() {
   }).catch(() => {});
 }
 function getRecent() { return recentPaths; }
+function renameRecent(oldPath, newPath) {
+  recentPaths = recentPaths.map(path => path === oldPath ? newPath : path);
+  const handle = state.directory;
+  recentWrites = recentWrites.catch(() => {}).then(async () => {
+    const records = await recentRecords(), item = await matchingRecent(records, handle); if (!item) return;
+    for (const key of ['paths', 'favorites', 'openTabs']) if (Array.isArray(item[key])) item[key] = item[key].map(path => path === oldPath ? newPath : path);
+    if (item.activeTab === oldPath) item.activeTab = newPath;
+    const db = await storageDatabase(); try { await new Promise((resolve, reject) => { const tx = db.transaction('settings', 'readwrite'); tx.objectStore('settings').put(records, 'recentWorkspaces'); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error); }); } finally { db.close(); }
+  }).catch(() => toast('Zuletzt geöffnete Dateien konnten nicht aktualisiert werden.'));
+}
 function rememberDocument() {
   if (!state.directory || !state.folderTarget || !state.path) return;
   const handle = state.directory, path = state.path;
@@ -201,5 +211,5 @@ window.addEventListener('keydown', event => {
   if (key === 'p') { event.preventDefault(); openSearch(); }
   if (document.activeElement === editor && ['b', 'i', 'k'].includes(key)) { event.preventDefault(); applyFormat({ b: 'bold', i: 'italic', k: 'link' }[key]); }
 });
-window.FolioFeatures = { renderEditor, showEditor, bindEditor: bindFeatureEditor, documentOpened() { if (area !== 'preview') $('preview-tab').click(); if (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) { sidebarHidden = true; preferences.sidebarHidden = true; storePreferences(); applyLayout(); } rememberDocument(); if (window.GraphitEnhancements) window.GraphitEnhancements.documentOpened(); }, workspaceChanged, selectArea(name) { area = name; applyLayout(); } };
+window.FolioFeatures = { renderEditor, showEditor, bindEditor: bindFeatureEditor, renameRecent, documentOpened() { if (area !== 'preview') $('preview-tab').click(); if (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) { sidebarHidden = true; preferences.sidebarHidden = true; storePreferences(); applyLayout(); } rememberDocument(); if (window.GraphitEnhancements) window.GraphitEnhancements.documentOpened(); }, workspaceChanged, selectArea(name) { area = name; applyLayout(); } };
 updateEditorOptions(); applyLayout(); renderEditor(); if (state.directory) workspaceChanged();

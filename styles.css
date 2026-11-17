@@ -320,3 +320,27 @@ button:disabled { cursor: not-allowed; }
 }
 
 @media (max-width: 360px) { .update-button { max-width: 52px; } .breadcrumbs { display: none; } }
+
+/* Project overview, quick capture and conflict resolution */
+.file-row { display: flex; align-items: center; min-width: 0; }
+.file-row .file-item { flex: 1; min-width: 0; }
+.rename-file { flex: none; padding: 5px 7px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); }
+.rename-file:hover, .rename-file:focus-visible { background: var(--hover); color: var(--text); }
+.project-overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; }
+.overview-group { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-raised); }
+.overview-group h3 { margin: 0 0 12px; color: var(--text); font-size: 14px; }
+.overview-group p { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.overview-link, .overview-group a { display: block; width: 100%; padding: 8px; border: 0; border-radius: 5px; background: transparent; color: var(--text); text-align: left; overflow-wrap: anywhere; }
+.overview-link:hover, .overview-link:focus-visible, .overview-group a:hover { background: var(--hover); color: var(--accent); }
+#related-files .overview-group { padding: 0; border: 0; background: transparent; }
+#capture-dialog, #conflict-dialog { width: min(760px, calc(100vw - 32px)); max-height: 90vh; padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); box-shadow: 0 18px 70px #0006; }
+#capture-dialog { max-width: 480px; }
+#capture-dialog::backdrop, #conflict-dialog::backdrop { background: var(--overlay); }
+#capture-dialog h2, #conflict-dialog h2 { margin: 0 0 16px; font-size: 18px; }
+#capture-dialog label, #conflict-dialog label { display: block; color: var(--muted); font-size: 12px; font-weight: 650; }
+#capture-dialog select, #capture-dialog textarea, #conflict-dialog textarea { display: block; width: 100%; margin: 8px 0 16px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); color: var(--text); font: inherit; }
+#capture-error, #conflict-message { color: var(--accent); font-size: 12px; }
+#capture-dialog .dialog-actions, #conflict-dialog .dialog-actions { justify-content: flex-end; }
+.conflict-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.conflict-columns textarea { min-height: 250px; resize: vertical; white-space: pre; }
+@media (max-width: 600px) { .conflict-columns { grid-template-columns: 1fr; } .conflict-columns textarea { min-height: 130px; } }

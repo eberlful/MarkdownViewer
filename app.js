@@ -20,7 +20,7 @@ function updateStatus() {
   $('word-count').textContent = `${(editor.value.trim().match(/\S+/g) || []).length} Wörter`;
   document.title = `${state.dirty ? '● ' : ''}${state.name} – Graphit`;
 }
-function changed() { updateStatus(); if (window.GraphitTabs) window.GraphitTabs.capture(); if (window.GraphitEnhancements) window.GraphitEnhancements.changed(); renderPreview(); renderBoard(); renderTodos(); if (window.FolioFeatures) window.FolioFeatures.renderEditor(); }
+function changed() { updateStatus(); if (window.GraphitTabs) window.GraphitTabs.capture(); if (window.GraphitWorkspace) window.GraphitWorkspace.render(); if (window.GraphitEnhancements) window.GraphitEnhancements.changed(); renderPreview(); renderBoard(); renderTodos(); if (window.FolioFeatures) window.FolioFeatures.renderEditor(); }
 function edited() { saveError = ''; changed(); scheduleAutosave(); }
 function canLeave(tabSwitch = false) { if (saveInFlight || state.moving) { toast('Bitte warte, bis das Speichern abgeschlossen ist.'); return false; } if (tabSwitch && window.GraphitTabs) return true; return !state.dirty || window.confirm('Es gibt ungespeicherte Änderungen. Möchtest du sie verwerfen?'); }
 function loadDocument(text, name, file = null, path = '', folderTarget = false, isNew = false) {
@@ -58,10 +58,16 @@ function inline(text) {
   const links = FolioCore.inlineLinks(text); let result = '', position = 0;
   for (const link of links) {
     result += inlineBase(text.slice(position, link.start));
-    const resolution = FolioCore.resolveLink(state.path, link.target, link.type, state.folderTarget && state.directory ? workspaceFiles() : []);
+    const resolution = FolioCore.resolveLink(state.path || state.name, link.target, link.type, state.folderTarget && state.directory ? workspaceFiles() : []);
     const label = escapeHTML(link.label);
     if (resolution.kind === 'external') result += `<a href="${safeURL(link.target)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
-    else if (resolution.kind === 'local') result += `<a href="#" data-folio-path="${escapeHTML(resolution.path)}">${label}</a>`;
+    else if (resolution.kind === 'local') {
+      const fragment = link.target.includes('#') ? link.target.slice(link.target.indexOf('#') + 1) : '';
+      const file = workspaceFiles().find(item => item.path === resolution.path);
+      const text = resolution.path === (state.path || state.name) ? editor.value : file && (window.GraphitTabs ? window.GraphitTabs.textFor(file) : file.text);
+      if (fragment && (text === undefined || !FolioCore.anchorLine(text, fragment))) result += `<span class="unresolved-link" title="Überschrift nicht gefunden">${label} ⓘ</span>`;
+      else result += `<a href="#" data-folio-path="${escapeHTML(resolution.path)}" data-folio-anchor="${escapeHTML(fragment)}">${label}</a>`;
+    }
     else result += `<span class="unresolved-link" title="${escapeHTML(state.directory && state.folderTarget ? resolution.reason : 'Öffne einen Arbeitsbereich, um lokale Links zu verwenden')}">${label} ⓘ</span>`;
     position = link.end;
   }
@@ -124,7 +130,7 @@ $('preview').addEventListener('change', event => {
 });
 $('preview').addEventListener('click', event => {
   const link = event.target.closest('a[data-folio-path]'); if (!link) return;
-  event.preventDefault(); const file = workspaceFiles().find(item => item.path === link.dataset.folioPath); if (file) openProjectFile(file);
+  event.preventDefault(); const file = workspaceFiles().find(item => item.path === link.dataset.folioPath); const anchor = link.dataset.folioAnchor; if (file) { const line = anchor ? FolioCore.anchorLine(window.GraphitTabs ? window.GraphitTabs.textFor(file) : file.text, anchor) : null; openProjectFile(file, line); } else if (anchor && link.dataset.folioPath === (state.path || state.name)) { const line = FolioCore.anchorLine(editor.value, anchor); if (line) { if (window.FolioFeatures) window.FolioFeatures.showEditor(); focusLine(line); } }
 });
 
 function workspaceFiles() { return window.GraphitTabs ? window.GraphitTabs.workspaceFiles() : state.files; }
@@ -245,7 +251,7 @@ async function scanDirectory(dir, prefix = '', scan = { files: [], errors: [], r
   for (const { name, handle } of entries) {
     const path = prefix ? `${prefix}/${name}` : name; const node = { name, path, handle, kind: handle.kind }; nodes.push(node);
     if (handle.kind === 'directory') node.children = await scanDirectory(handle, path, scan);
-    else if (markdownFile(name)) { try { node.text = await (await handle.getFile()).text(); } catch (err) { node.error = err.message; scan.errors.push(`${path}: ${err.message}`); } scan.files.push(node); }
+    else if (markdownFile(name)) { try { const diskFile = await handle.getFile(); node.text = await diskFile.text(); node.modified = diskFile.lastModified || 0; } catch (err) { node.error = err.message; scan.errors.push(`${path}: ${err.message}`); } scan.files.push(node); }
   }
   return nodes;
 }
@@ -257,7 +263,7 @@ async function readWorkspace(dir) {
 function applyWorkspaceScan(scan) {
   state.files = scan.files; if (window.GraphitTabs) window.GraphitTabs.reconcile(scan.files); state.scanErrors = scan.errors; state.tree = scan.tree; state.projects = scan.tree.filter(node => node.kind === 'directory');
   if (!state.projects.some(p => p.name === state.project)) state.project = state.projects[0]?.name || '';
-  renderFiles(); renderBoard(); renderTodos(); renderPreview();
+  renderFiles(); renderBoard(); renderTodos(); renderPreview(); if (window.GraphitWorkspace) window.GraphitWorkspace.render();
   if (state.scanErrors.length) toast(`${state.scanErrors.length} Einträge konnten nicht gelesen werden.`);
 }
 async function refreshFiles() {
@@ -272,7 +278,7 @@ function renderFiles() {
   function addNodes(nodes, parent) {
     for (const node of nodes) {
       if (node.kind === 'directory') { const details = document.createElement('details'); details.open = state.expanded.has(node.path); details.ontoggle = () => { if (details.open) state.expanded.add(node.path); else state.expanded.delete(node.path); }; const summary = document.createElement('summary'); summary.textContent = `▸ ${node.name}`; summary.title = node.path; details.append(summary); const children = document.createElement('div'); children.className = 'tree-children'; addNodes(node.children, children); details.append(children); parent.append(details); }
-      else { const b = document.createElement('button'); b.className = `file-item${node.path === state.path && state.folderTarget ? ' active' : ''}`; b.title = markdownFile(node.name) ? node.path : `${node.path} (nur sichtbar)`; b.append(document.createTextNode(`${markdownFile(node.name) ? '▤' : '·'}  ${node.name}`)); if (markdownFile(node.name)) b.onclick = () => openProjectFile(node); else { b.disabled = true; b.classList.add('non-markdown'); } parent.append(b); }
+      else { const b = document.createElement('button'); b.className = `file-item${node.path === state.path && state.folderTarget ? ' active' : ''}`; b.title = markdownFile(node.name) ? node.path : `${node.path} (nur sichtbar)`; b.append(document.createTextNode(`${markdownFile(node.name) ? '▤' : '·'}  ${node.name}`)); if (markdownFile(node.name)) b.onclick = () => openProjectFile(node); else { b.disabled = true; b.classList.add('non-markdown'); } const row = document.createElement('div'); row.className = 'file-row'; row.append(b); parent.append(row); if (markdownFile(node.name) && window.GraphitWorkspace) { const rename = document.createElement('button'); rename.type = 'button'; rename.className = 'rename-file'; rename.textContent = '✎'; rename.title = `Umbenennen: ${node.path}`; rename.setAttribute('aria-label', rename.title); rename.onclick = () => window.GraphitWorkspace.rename(node); row.append(rename); } }
     }
   }
   addNodes(state.tree, list);
@@ -382,8 +388,11 @@ async function saveDocument(manual = true) {
         let handle = state.file;
         if (handle) {
           const latest = await (await handle.getFile()).text();
-          if (latest !== original && (!manual || !window.confirm('Die Datei wurde außerhalb von Graphit geändert. Möchtest du sie mit deinem aktuellen Entwurf überschreiben?'))) {
-            saveError = 'Die Datei wurde außerhalb von Graphit geändert. Dein Entwurf bleibt erhalten; mit Speichern kannst du den Konflikt lösen.'; toast(saveError); return;
+          if (latest !== original) {
+            if (!manual) { saveError = 'Die Datei wurde außerhalb von Graphit geändert. Dein Entwurf bleibt erhalten; mit Speichern kannst du den Konflikt lösen.'; toast(saveError); return; }
+            const result = window.GraphitWorkspace ? await window.GraphitWorkspace.resolveConflict(handle, snapshot, latest) : { choice: window.confirm('Die Datei wurde außerhalb von Graphit geändert. Möchtest du sie mit deinem aktuellen Entwurf überschreiben?') ? 'draft' : 'cancel', disk: latest };
+            if (result.choice === 'disk') { editor.value = result.disk; state.saved = result.disk; saveError = ''; changed(); await refreshFiles(); return; }
+            if (result.choice !== 'draft') { saveError = 'Die Datei wurde außerhalb von Graphit geändert. Dein Entwurf bleibt erhalten.'; return; }
           }
         } else {
           const parts = (state.path || state.name).split('/'); const leaf = parts.pop(); let parent = state.directory;
@@ -408,6 +417,6 @@ async function saveDocument(manual = true) {
   try { await saveInFlight; } finally { saveInFlight = null; updateStatus(); if (window.GraphitTabs) window.GraphitTabs.capture(); if (epoch === documentEpoch && state.dirty && !saveError) scheduleAutosave(); }
 }
 $('save').onclick = () => saveDocument(true);
-for (const name of ['preview', 'board', 'todos']) $(`${name}-tab`).onclick = () => { for (const other of ['preview', 'board', 'todos']) { const selected = name === other; $(`${other}-tab`).setAttribute('aria-selected', String(selected)); $(`${other}-view`).hidden = !selected; } if (window.FolioFeatures) window.FolioFeatures.selectArea(name); };
+for (const name of ['preview', 'board', 'todos', 'projects']) $(`${name}-tab`).onclick = () => { for (const other of ['preview', 'board', 'todos', 'projects']) { const selected = name === other; $(`${other}-tab`).setAttribute('aria-selected', String(selected)); $(`${other}-view`).hidden = !selected; } if (window.FolioFeatures) window.FolioFeatures.selectArea(name); };
 editor.value = welcome; state.saved = welcome; changed();
 const restoreReady = restoreOnStart();
