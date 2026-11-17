@@ -3,7 +3,7 @@
 // Project views use the same workspace snapshot and open-tab contents as search and Kanban.
 (() => {
   const textOf = file => window.GraphitTabs ? window.GraphitTabs.textFor(file) : file.text;
-  const isTicket = path => /^[^/]+\/tickets\/.+\.(?:md|markdown)$/i.test(path);
+  const isTicket = path => state.projects.some(project => path.startsWith(`${project.name}/tickets/`) && /\.(?:md|markdown)$/i.test(path));
   const btn = (label, action) => { const node = document.createElement('button'); node.type = 'button'; node.className = 'overview-link'; node.textContent = label; node.onclick = action; return node; };
   function group(parent, title) { const section = document.createElement('section'); section.className = 'overview-group'; const h = document.createElement('h3'); h.textContent = title; section.append(h); parent.append(section); return section; }
   function empty(section, message) { if (section.children.length === 1) { const p = document.createElement('p'); p.textContent = message; section.append(p); } }
@@ -156,6 +156,37 @@
       window.alert(detail);
     } finally { state.moving = false; editor.readOnly = false; $('save').disabled = false; }
   }
-  window.GraphitWorkspace = { render, resolveConflict, rename };
+  async function initializePara() {
+    if (!state.directory) { toast('Öffne zuerst einen leeren Arbeitsbereich.'); return; }
+    if (state.moving || saveInFlight || (window.GraphitTabs && (window.GraphitTabs.hasSaving() || window.GraphitTabs.hasUnsavedNew()))) { toast('Bitte speichere oder schließe Entwürfe und warte auf laufende Schreibvorgänge.'); return; }
+    const root = state.directory, created = [];
+    state.moving = true; editor.readOnly = true; $('save').disabled = true;
+    try {
+      for await (const entry of root.entries()) throw new Error('Der Arbeitsbereich ist nicht leer.');
+      const docs = [
+        ['index.md', '# Willkommen bei PARA\n\nOrganisiere deine Notizen nach Projekten, Bereichen, Ressourcen und Archiv.\n\n- [Projekte](Projekte/Beispiel.md)\n- [Bereiche](Bereiche/Beispiel.md)\n- [Ressourcen](Ressourcen/Beispiel.md)\n- [Archiv](Archiv/Beispiel.md)\n'],
+        ['Projekte/Beispiel.md', '# Projekte\n\nHier liegen Vorhaben mit einem konkreten Ziel und einem Abschluss. Erstelle für jedes Projekt einen eigenen Ordner.\n\nBeispiel: [Website überarbeiten](Beispielprojekt/README.md).\n'],
+        ['Projekte/Beispielprojekt/README.md', '# Website überarbeiten\n\nDieses Beispielprojekt sammelt alles für ein klares Ziel: eine übersichtliche Website erstellen. Lege Tickets im Kanban an und ergänze hier deine Notizen.\n'],
+        ['Bereiche/Beispiel.md', '# Bereiche\n\nBereiche sind dauerhafte Verantwortungen ohne festes Enddatum. Beispiel: Gesundheit mit Routinen und regelmäßigen Terminen.\n'],
+        ['Ressourcen/Beispiel.md', '# Ressourcen\n\nHier sammelst du Wissen und Materialien für spätere Verwendung. Beispiel: eine Sammlung hilfreicher Artikel zum Thema Gestaltung.\n'],
+        ['Archiv/Beispiel.md', '# Archiv\n\nVerschiebe abgeschlossene oder nicht mehr aktive Projekte und Notizen hierher. Beispiel: Unterlagen eines abgeschlossenen Website-Projekts.\n'],
+        ['.graphit.json', '{"layout":"para","version":1}\n']
+      ];
+      const directories = new Map([['', root]]);
+      for (const [path, contents] of docs) {
+        if (root !== state.directory) throw new Error('Der Arbeitsbereich wurde gewechselt.');
+        const parts = path.split('/'), name = parts.pop(); let prefix = '', parent = root;
+        for (const part of parts) { prefix = prefix ? `${prefix}/${part}` : part; if (!directories.has(prefix)) { try { await parent.getDirectoryHandle(part); throw new Error(`„${prefix}“ existiert bereits.`); } catch (error) { if (error.name !== 'NotFoundError') throw error; } parent = await parent.getDirectoryHandle(part, { create: true }); directories.set(prefix, parent); created.push(prefix + '/'); } else parent = directories.get(prefix); }
+        try { await parent.getFileHandle(name); throw new Error(`„${path}“ existiert bereits.`); } catch (error) { if (error.name !== 'NotFoundError') throw error; }
+        const file = await parent.getFileHandle(name, { create: true }); created.push(path);
+        const writable = await file.createWritable(); await writable.write(contents); await writable.close();
+      }
+      await refreshFiles();
+      toast('PARA-Arbeitsbereich initialisiert.');
+    } catch (error) { await refreshFiles(); window.alert(`Initialisierung fehlgeschlagen: ${error.message}${created.length ? `\nBereits angelegt: ${created.join(', ')}` : ''}`); return; }
+    finally { state.moving = false; editor.readOnly = false; $('save').disabled = false; }
+    const index = state.files.find(file => file.path === 'index.md'); if (index) await openProjectFile(index);
+  }
+  window.GraphitWorkspace = { render, resolveConflict, rename, initializePara };
   renderFiles(); render();
 })();

@@ -84,3 +84,7 @@ Mit **Schnell erfassen**, der Befehlspalette oder **Strg+Alt+N** (macOS **⌘+Al
 ## Dateien umbenennen
 
 Über das Stiftsymbol im Dateibaum lassen sich gespeicherte Markdown-Dateien innerhalb ihres Ordners umbenennen. Graphit zeigt Dateien mit betroffenen Links und bietet deren Aktualisierung an. Unterstützt werden die auch sonst erkannten Inline-Markdown- und Wikilinks; Beschriftungen und Anker bleiben erhalten. Ungespeicherte betroffene Dateien müssen vorher gespeichert oder geschlossen werden. Bei Lesefehlern ist das Umbenennen gesperrt. Dateioperationen über die Browser-API sind nicht transaktional: Falls ein Schritt fehlschlägt, nennt Graphit vorhandene Kopien und bereits aktualisierte Dateien, damit du sie prüfen kannst.
+
+## PARA-Arbeitsbereich initialisieren
+
+Öffne einen leeren Ordner und wähle in der Befehlspalette **Arbeitsbereich mit PARA initialisieren**. Graphit erstellt eine `index.md` sowie die Ordner Projekte, Bereiche, Ressourcen und Archiv mit erklärenden Beispielen. Unter `Projekte` erhält jedes Projekt einen eigenen Ordner für Projektübersicht und Kanban. Die Datei `.graphit.json` kennzeichnet den Arbeitsbereich als PARA-Arbeitsbereich. Bei einem Fehler nennt Graphit bereits angelegte Dateien; diese können geprüft und bei Bedarf manuell entfernt werden.

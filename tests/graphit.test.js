@@ -60,6 +60,36 @@ function harness(indexedDB = makeDB()) {
 }
 async function openWorkspace(app, root) { app.context.root = root; await vm.runInContext('state.directory = root; refreshFiles()', app.context); }
 
+test('PARA initialisieren und verschachtelte Projekte für Kanban und TODOs nutzen', async () => {
+  const root = directory('root', {}), app = harness(); await openWorkspace(app, root);
+  await vm.runInContext('window.GraphitWorkspace.initializePara()', app.context);
+  assert.ok(root.entriesMap['index.md']); assert.ok(root.entriesMap['.graphit.json']);
+  for (const name of ['Projekte', 'Bereiche', 'Ressourcen', 'Archiv']) assert.ok(root.entriesMap[name].entriesMap['Beispiel.md']);
+  assert.equal(vm.runInContext('state.project', app.context), 'Projekte/Beispielprojekt');
+  await vm.runInContext("createTicket('Test', 'hoch')", app.context);
+  assert.ok(root.entriesMap.Projekte.entriesMap.Beispielprojekt.entriesMap.tickets.entriesMap['test.md']);
+  assert.equal(vm.runInContext("projectForPath('Projekte/Beispielprojekt/tickets/test.md').name", app.context), 'Projekte/Beispielprojekt');
+  assert.equal(vm.runInContext("projectForPath('Bereiche/Beispiel.md')", app.context), undefined);
+  await vm.runInContext('refreshFiles()', app.context);
+  assert.equal(vm.runInContext('state.para', app.context), true);
+});
+
+test('PARA-Initialisierung verändert nicht leere Arbeitsbereiche nicht', async () => {
+  const existing = file('alt.md', 'Erhalten'), root = directory('root', { 'alt.md': existing }), app = harness();
+  let error = ''; app.context.window.alert = value => { error = value; }; await openWorkspace(app, root);
+  await vm.runInContext('window.GraphitWorkspace.initializePara()', app.context);
+  assert.match(error, /nicht leer/); assert.equal(existing.text, 'Erhalten'); assert.equal(root.entriesMap['index.md'], undefined);
+});
+
+test('PARA meldet bereits angelegte Dateien bei einem Schreibfehler', async () => {
+  const root = directory('root', {}), original = root.getFileHandle; let error = '';
+  root.getFileHandle = async (name, options) => { if (name === '.graphit.json' && options?.create) throw new Error('Kein Schreibzugriff'); return original(name, options); };
+  const app = harness(); app.context.window.alert = value => { error = value; }; await openWorkspace(app, root);
+  await vm.runInContext('window.GraphitWorkspace.initializePara()', app.context);
+  assert.match(error, /Kein Schreibzugriff/); assert.match(error, /index\.md/);
+  assert.ok(root.entriesMap['index.md']); assert.equal(root.entriesMap['.graphit.json'], undefined);
+});
+
 test('Tag-Ansicht zählt Dateien samt Untertags und berücksichtigt Entwürfe in anderen Tabs', async () => {
   const a = file('a.md', '---\ntags: [Projekt/Planung, idee]\n---\n#projekt/planung'), b = file('b.md', '#PROJEKT/umsetzung');
   const app = harness(); await openWorkspace(app, directory('root', { 'a.md': a, 'b.md': b }));

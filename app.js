@@ -27,7 +27,7 @@ function loadDocument(text, name, file = null, path = '', folderTarget = false, 
   if (window.GraphitTabs) window.GraphitTabs.prepareNew();
   clearTimeout(saveTimer); saveError = ''; documentEpoch++;
   state.folderTarget = folderTarget; state.isNew = isNew; editor.value = text; state.name = name; state.path = path; state.file = file; state.saved = text;
-  const project = path.split('/')[0]; if (path.includes('/') && state.projects.some(p => p.name === project)) state.project = project;
+  const project = projectForPath(path); if (project) state.project = project.name;
   if (folderTarget && path) { const parts = path.split('/'); parts.pop(); let parent = ''; for (const part of parts) { parent = parent ? `${parent}/${part}` : part; state.expanded.add(parent); } }
   changed(); renderFiles(); if (window.FolioFeatures) window.FolioFeatures.documentOpened(); $('sidebar').classList.remove('open'); $('toggle-sidebar').setAttribute('aria-expanded', 'false');
 }
@@ -138,6 +138,7 @@ $('preview').addEventListener('click', event => {
 
 function workspaceFiles() { return window.GraphitTabs ? window.GraphitTabs.workspaceFiles() : state.files; }
 const markdownFile = name => /\.(?:md|markdown)$/i.test(name);
+function projectForPath(path) { return state.projects.find(project => path.startsWith(`${project.name}/`)); }
 function currentProject() { return state.projects.find(project => project.name === state.project); }
 function ticketFiles() { return workspaceFiles().filter(file => file.path.startsWith(`${state.project}/tickets/`)); }
 function makeMessage(title, description) { const box = document.createElement('div'); box.className = 'board-empty'; const strong = document.createElement('strong'); strong.textContent = title; const p = document.createElement('p'); p.textContent = description; box.append(strong, p); return box; }
@@ -147,7 +148,7 @@ function renderBoard() {
   for (const project of state.projects) { const option = document.createElement('option'); option.value = project.name; option.textContent = project.name; select.append(option); }
   select.value = state.project; select.disabled = !state.projects.length; $('new-ticket').disabled = !currentProject();
   if (!state.directory) { board.append(makeMessage('Öffne einen Arbeitsbereich', 'Wähle einen Ordner, um Projekte und ihre Tickets zu sehen.')); return; }
-  if (!state.projects.length) { board.append(makeMessage('Noch keine Projekte gefunden', 'Jeder direkte Unterordner des Arbeitsbereichs ist ein Projekt.')); return; }
+  if (!state.projects.length) { board.append(makeMessage('Noch keine Projekte gefunden', 'Lege einen Projektordner im Arbeitsbereich an.')); return; }
   const tickets = [];
   for (const file of ticketFiles()) { if (file.error) { const p = document.createElement('p'); p.textContent = `${file.path}: ${file.error}`; errors.append(p); continue; } const ticket = FolioCore.parseTicket(window.GraphitTabs ? window.GraphitTabs.textFor(file) : file.text); if (ticket.error) { const p = document.createElement('p'); p.textContent = `${file.path}: ${ticket.error}`; errors.append(p); } else tickets.push({ ...ticket, file }); }
   tickets.sort((a, b) => a.title.localeCompare(b.title, 'de') || a.file.path.localeCompare(b.file.path, 'de'));
@@ -213,13 +214,13 @@ function renderTodos() {
   for (const project of state.projects) option(projectSelect, project.name, project.name);
   option(projectSelect, ':root:', 'Arbeitsbereich'); projectSelect.value = todoProject;
   option(fileSelect, '', 'Alle Dateien');
-  for (const file of workspaceFiles().filter(file => !todoProject || (todoProject === ':root:' ? !file.path.includes('/') : file.path.startsWith(`${todoProject}/`)))) option(fileSelect, file.path, file.path);
+  for (const file of workspaceFiles().filter(file => !todoProject || (todoProject === ':root:' ? !projectForPath(file.path) : file.path.startsWith(`${todoProject}/`)))) option(fileSelect, file.path, file.path);
   fileSelect.value = todoFile;
   const groups = new Map();
   for (const file of workspaceFiles()) {
-    if (file.error || (todoFile && file.path !== todoFile) || (todoProject && (todoProject === ':root:' ? file.path.includes('/') : !file.path.startsWith(`${todoProject}/`)))) continue;
+    if (file.error || (todoFile && file.path !== todoFile) || (todoProject && (todoProject === ':root:' ? !!projectForPath(file.path) : !file.path.startsWith(`${todoProject}/`)))) continue;
     const text = window.GraphitTabs ? window.GraphitTabs.textFor(file) : state.path === file.path && state.folderTarget ? editor.value : file.text;
-    const parts = file.path.split('/'); const group = parts.length > 1 ? `project:${parts[0]}` : 'root:';
+    const project = projectForPath(file.path); const group = project ? `project:${project.name}` : 'root:';
     for (const todo of FolioCore.findTodos(text)) { if (!groups.has(group)) groups.set(group, []); groups.get(group).push({ ...todo, file }); }
   }
   if (!groups.size) { list.append(makeMessage('Keine offenen TODOs', 'Für die aktuelle Auswahl wurden keine offenen TODOs gefunden.')); }
@@ -261,10 +262,11 @@ async function scanDirectory(dir, prefix = '', scan = { files: [], errors: [], r
 async function readWorkspace(dir) {
   const scan = { files: [], errors: [], rootError: null }; const tree = await scanDirectory(dir, '', scan);
   if (scan.rootError) throw scan.rootError;
-  return { ...scan, tree };
+  let para = false; try { const config = await dir.getFileHandle('.graphit.json'); para = JSON.parse(await (await config.getFile()).text()).layout === 'para'; } catch {}
+  return { ...scan, tree, para };
 }
 function applyWorkspaceScan(scan) {
-  state.files = scan.files; if (window.GraphitTabs) window.GraphitTabs.reconcile(scan.files); state.scanErrors = scan.errors; state.tree = scan.tree; state.projects = scan.tree.filter(node => node.kind === 'directory');
+  state.files = scan.files; if (window.GraphitTabs) window.GraphitTabs.reconcile(scan.files); state.scanErrors = scan.errors; state.tree = scan.tree; state.para = !!scan.para; const rootProjects = scan.tree.find(node => node.kind === 'directory' && node.name === 'Projekte'); state.projects = state.para ? (rootProjects?.children || []).filter(node => node.kind === 'directory').map(node => ({ ...node, name: node.path })) : scan.tree.filter(node => node.kind === 'directory');
   if (!state.projects.some(p => p.name === state.project)) state.project = state.projects[0]?.name || '';
   renderFiles(); renderBoard(); renderTodos(); renderPreview(); if (window.GraphitWorkspace) window.GraphitWorkspace.render(); if (window.GraphitTags) window.GraphitTags.render();
   if (state.scanErrors.length) toast(`${state.scanErrors.length} Einträge konnten nicht gelesen werden.`);

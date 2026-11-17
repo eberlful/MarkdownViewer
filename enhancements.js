@@ -61,6 +61,7 @@
     { id: 'capture', label: 'Schnell erfassen', run: () => $('quick-capture').click() },
     { id: 'projects', label: 'Projektübersicht öffnen', run: () => $('projects-tab').click() },
     { id: 'new', label: 'Neue Notiz', run: () => $('new-file').click() },
+    { id: 'init-para', label: 'Arbeitsbereich mit PARA initialisieren', run: () => window.GraphitWorkspace.initializePara() },
     { id: 'folder', label: 'Arbeitsbereich öffnen', run: () => $('open-folder').click() },
     { id: 'search', label: 'Dateien und Inhalte suchen', run: () => $('open-search').click() },
     { id: 'save', label: 'Dokument speichern', run: () => $('save').click() },

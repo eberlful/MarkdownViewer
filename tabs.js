@@ -45,7 +45,7 @@
     active = tab; editor = tab.element; editor.hidden = false; editor.id = 'editor';
     for (const key of fields) state[key] = tab[key];
     saveError = tab.error || ''; documentEpoch++;
-    const project = state.path.split('/')[0]; if (state.path.includes('/') && state.projects.some(item => item.name === project)) state.project = project;
+    const project = projectForPath(state.path); if (project) state.project = project.name;
     changed(); renderFiles(); scheduleAutosave();
     if (window.FolioFeatures) window.FolioFeatures.documentOpened();
     return true;
