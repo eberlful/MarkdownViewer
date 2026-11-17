@@ -16,7 +16,7 @@ if ('serviceWorker' in navigator && window.isSecureContext && /^https?:$/.test(w
   }
 
   updateButton.addEventListener('click', () => {
-    if (state.dirty || saveInFlight) { toast('Bitte speichere zuerst deine Änderungen, bevor du Folio aktualisierst.'); return; }
+    if (state.dirty || saveInFlight || (window.GraphitTabs && (window.GraphitTabs.hasDirty() || window.GraphitTabs.hasSaving()))) { toast('Bitte speichere zuerst deine Änderungen, bevor du Graphit aktualisierst.'); return; }
     if (activated) { window.location.reload(); return; }
     const worker = registration && registration.waiting;
     if (!worker) { updateButton.hidden = true; return; }
@@ -29,9 +29,9 @@ if ('serviceWorker' in navigator && window.isSecureContext && /^https?:$/.test(w
     if (!applying) return;
     applying = false;
     activated = true;
-    if (state.dirty || saveInFlight) {
+    if (state.dirty || saveInFlight || (window.GraphitTabs && (window.GraphitTabs.hasDirty() || window.GraphitTabs.hasSaving()))) {
       showUpdate();
-      toast('Das Update ist bereit. Speichere deine Änderungen und starte Folio neu.');
+      toast('Das Update ist bereit. Speichere deine Änderungen und starte Graphit neu.');
       return;
     }
     window.location.reload();
@@ -42,5 +42,5 @@ if ('serviceWorker' in navigator && window.isSecureContext && /^https?:$/.test(w
     if (registration.waiting && navigator.serviceWorker.controller) showUpdate();
     watch(registration.installing);
     registration.addEventListener('updatefound', () => watch(registration.installing));
-  }).catch(error => console.warn('Folio konnte den Offline-Modus nicht einrichten:', error));
+  }).catch(error => console.warn('Graphit konnte den Offline-Modus nicht einrichten:', error));
 }

@@ -32,6 +32,7 @@ function setupWorker() {
 
 test('Manifest beschreibt installierbare App und passende Symbole', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
+  assert.equal(manifest.name, 'Graphit – Dein Projektarbeitsplatz'); assert.equal(manifest.short_name, 'Graphit'); assert.equal(manifest.id, './');
   assert.equal(manifest.start_url, './'); assert.equal(manifest.scope, './'); assert.equal(manifest.display, 'standalone');
   for (const [size, purpose] of [[192, 'any'], [512, 'any'], [512, 'maskable']]) {
     const icon = manifest.icons.find(item => item.sizes === `${size}x${size}` && item.purpose === purpose);
@@ -51,6 +52,10 @@ test('Service Worker hält nur die App-Dateien offline bereit, auch unter einem 
   }
   assert.equal(await worker.request('https://example.test/folio/?view=test', 'navigate'), 'cached:./index.html');
   assert.equal(await worker.request('https://example.test/folio/app.js'), 'cached:./app.js');
+  assert.equal(await worker.request('https://example.test/folio/theme.js'), 'cached:./theme.js');
+  assert.equal(await worker.request('https://example.test/folio/tabs.js'), 'cached:./tabs.js');
+  assert.equal(await worker.request('https://example.test/folio/enhancements.js'), 'cached:./enhancements.js');
+  assert.equal(await worker.request('https://example.test/folio/assets/graphit-mark.svg'), 'cached:./assets/graphit-mark.svg');
   assert.equal(await worker.request('https://example.test/folio/user-note.md'), undefined);
   assert.equal(await worker.request('https://another.test/folio/app.js'), undefined);
   assert.equal(await worker.request('https://example.test/folio/app.js', 'cors', 'POST'), undefined);
@@ -66,14 +71,14 @@ test('Updates löschen nur eigene veraltete Caches und aktivieren sich nur auf a
   worker.handlers.message({ data: 'SKIP_WAITING' }); assert.equal(worker.self.skipped, true);
 });
 
-function setupRegistration(dirty = false) {
+function setupRegistration(dirty = false, tabs = null) {
   const handlers = {}, serviceHandlers = {}, workerMessages = [], notifications = [];
   const button = { hidden: true, disabled: false, addEventListener(type, cb) { handlers[type] = cb; } };
   const waiting = { postMessage(message) { workerMessages.push(message); } };
   const registration = { waiting, addEventListener() {} };
   const serviceWorker = { controller: {}, addEventListener(type, cb) { serviceHandlers[type] = cb; }, async register() { return registration; } };
   const state = { dirty }; const location = { protocol: 'http:', reload() { location.reloaded = true; } };
-  const context = { navigator: { serviceWorker }, window: { isSecureContext: true, location }, document: { getElementById() { return button; } }, state, saveInFlight: null, toast(message) { notifications.push(message); }, console };
+  const context = { navigator: { serviceWorker }, window: { isSecureContext: true, location, GraphitTabs: tabs }, document: { getElementById() { return button; } }, state, saveInFlight: null, toast(message) { notifications.push(message); }, console };
   vm.runInNewContext(fs.readFileSync(path.join(root, 'pwa.js'), 'utf8'), context);
   return { handlers, serviceHandlers, state, button, location, workerMessages, notifications };
 }
@@ -86,4 +91,15 @@ test('Update schützt ungespeicherte Änderungen auch während der Aktivierung',
   app.state.dirty = true; app.serviceHandlers.controllerchange(); assert.equal(app.location.reloaded, undefined);
   assert.equal(app.button.hidden, false);
   app.state.dirty = false; app.handlers.click(); assert.equal(app.location.reloaded, true);
+});
+
+
+test('Update wartet auch auf ungespeicherte oder noch speichernde Tabs', async () => {
+  const tabs = { hasDirty: () => true, hasSaving: () => false };
+  const app = setupRegistration(false, tabs); await Promise.resolve();
+  app.handlers.click(); assert.equal(app.workerMessages.length, 0);
+  tabs.hasDirty = () => false; tabs.hasSaving = () => true;
+  app.handlers.click(); assert.equal(app.workerMessages.length, 0);
+  tabs.hasSaving = () => false; app.handlers.click();
+  assert.deepEqual(app.workerMessages, ['SKIP_WAITING']);
 });

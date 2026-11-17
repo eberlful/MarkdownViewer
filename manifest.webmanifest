@@ -1,14 +1,14 @@
 {
   "id": "./",
-  "name": "Folio – Dein Projektarbeitsplatz",
-  "short_name": "Folio",
+  "name": "Graphit – Dein Projektarbeitsplatz",
+  "short_name": "Graphit",
   "description": "Ein lokaler Arbeitsplatz für Markdown, Projekte und Aufgaben.",
   "lang": "de",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#f7f7f4",
-  "theme_color": "#315c46",
+  "background_color": "#1e1e22",
+  "theme_color": "#1e1e22",
   "icons": [
     { "src": "pwa-icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "pwa-icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },

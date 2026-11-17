@@ -6,17 +6,18 @@ const preferences = (() => {
 })();
 function storePreferences() { try { localStorage.setItem('folio-ui', JSON.stringify(preferences)); } catch {} }
 let area = 'preview';
-let mode = ['editor', 'split', 'preview'].includes(preferences.mode) ? preferences.mode : 'split';
+let mode = ['live', 'editor', 'split', 'preview'].includes(preferences.mode) ? preferences.mode : 'live';
 let split = Math.min(75, Math.max(25, Number(preferences.split) || 50));
 let sidebarHidden = preferences.sidebarHidden === undefined ? !!(window.matchMedia && window.matchMedia('(max-width: 700px)').matches) : !!preferences.sidebarHidden;
 
 function applyLayout() {
   const boardOpen = area !== 'preview';
   $('editor-panel').hidden = boardOpen || mode === 'preview';
-  $('result-panel').hidden = !boardOpen && mode === 'editor';
+  $('result-panel').hidden = !boardOpen && (mode === 'editor' || mode === 'live');
   $('splitter').hidden = boardOpen || mode !== 'split';
   $('workspace').style.setProperty('--split', `${split}%`);
   $('workspace').classList.toggle('single', boardOpen || mode !== 'split');
+  $('app').classList.toggle('live-mode', mode === 'live' && !boardOpen);
   document.querySelectorAll('[data-mode]').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.mode === mode && !boardOpen)); });
   $('splitter').setAttribute('aria-valuenow', String(Math.round(split)));
   $('app').classList.toggle('sidebar-hidden', sidebarHidden);
@@ -25,7 +26,7 @@ function applyLayout() {
 function setMode(next) {
   mode = next; preferences.mode = mode; storePreferences();
   if (area !== 'preview') $('preview-tab').click();
-  applyLayout();
+  applyLayout(); renderEditor();
 }
 function showEditor() { if (area !== 'preview') $('preview-tab').click(); if (mode === 'preview') setMode('split'); }
 document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
@@ -39,12 +40,43 @@ $('splitter').addEventListener('pointerdown', event => {
   el.addEventListener('pointermove', move); el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
 });
 
+function liveInline(line) {
+  const pattern = /(`[^`]+`|\[\[[^\]\n]+\]\]|\[[^\]\n]+\]\([^\s)]+\)|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\*[^*]+\*|_[^_]+_)/g;
+  let output = '', end = 0, match;
+  const hide = value => `<span class="syntax-hide">${escapeHTML(value)}</span>`;
+  while ((match = pattern.exec(line))) {
+    let slashes = 0; for (let i = match.index - 1; i >= 0 && line[i] === '\\'; i--) slashes++;
+    if (slashes % 2) continue;
+    output += escapeHTML(line.slice(end, match.index));
+    const token = match[0];
+    const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (link) output += `${hide('[')}<span class="live-link">${escapeHTML(link[1])}</span>${hide(`](${link[2]})`)}`;
+    else {
+      const double = token.startsWith('**') || token.startsWith('__') || token.startsWith('[[') || token.startsWith('~~');
+      const n = double ? 2 : 1;
+      const cls = token[0] === '`' ? 'live-code' : token[0] === '[' ? 'live-link' : token[0] === '~' ? 'live-strike' : double ? 'live-bold' : 'live-italic';
+      output += `${hide(token.slice(0, n))}<span class="${cls}">${escapeHTML(token.slice(n, -n))}</span>${hide(token.slice(-n))}`;
+    }
+    end = pattern.lastIndex;
+  }
+  return output + escapeHTML(line.slice(end));
+}
 function highlightMarkdown(text) {
-  let inFence = false;
-  return text.split('\n').map(line => {
+  let fence = null;
+  const startLine = text.slice(0, editor.selectionStart || 0).split('\n').length - 1;
+  const endLine = text.slice(0, editor.selectionEnd || 0).split('\n').length - 1;
+  return text.split('\n').map((line, index) => {
     const escaped = escapeHTML(line);
-    if (/^ {0,3}(`{3,}|~{3,})/.test(line)) { inFence = !inFence; return `<span class="syntax-code">${escaped}</span>`; }
-    if (inFence) return `<span class="syntax-code">${escaped}</span>`;
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (marker) { if (!fence) fence = { char: marker[1][0], length: marker[1].length }; else if (marker[1][0] === fence.char && marker[1].length >= fence.length && !marker[2].trim()) fence = null; return `<span class="syntax-code">${escaped}</span>`; }
+    if (fence) return `<span class="syntax-code">${escaped}</span>`;
+    if (mode === 'live' && (index < startLine || index > endLine)) {
+      const heading = line.match(/^(#{1,6})(\s+)(.*)$/);
+      if (heading) return `<span class="syntax-hide">${escapeHTML(heading[1])}</span>${escapeHTML(heading[2])}<span class="live-heading">${liveInline(heading[3])}</span>`;
+      const prefix = line.match(/^(\s*(?:>\s?|[-+*]\s+|\d+[.)]\s+))(.*)$/);
+      if (prefix) return `<span class="live-marker">${escapeHTML(prefix[1])}</span>${liveInline(prefix[2])}`;
+      return liveInline(line);
+    }
     if (/^#{1,6}\s/.test(line)) return `<span class="syntax-heading">${escaped}</span>`;
     if (/^\s*>/.test(line)) return `<span class="syntax-quote">${escaped}</span>`;
     return escaped.replace(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\)|\[[ xX]\])/g, '<span class="syntax-mark">$1</span>');
@@ -71,7 +103,8 @@ function renderLineNumbers() {
   highlight.querySelectorAll('.syntax-line').forEach((line, index) => { const number = document.createElement('div'); number.textContent = index + 1; number.style.height = `${line.getBoundingClientRect().height}px`; gutter.append(number); });
 }
 function syncScroll() { $('editor-highlight').scrollTop = editor.scrollTop; $('editor-highlight').scrollLeft = editor.scrollLeft; $('line-numbers').scrollTop = editor.scrollTop; }
-editor.addEventListener('scroll', syncScroll);
+function bindFeatureEditor(element) { element.addEventListener('scroll', syncScroll); element.addEventListener('click', renderEditor); element.addEventListener('keyup', renderEditor); if (window.GraphitEnhancements) window.GraphitEnhancements.bindEditor(element); }
+bindFeatureEditor(editor);
 window.addEventListener('resize', () => { renderLineNumbers(); syncScroll(); });
 if (window.ResizeObserver) new window.ResizeObserver(() => { renderLineNumbers(); syncScroll(); }).observe(editor);
 function applyFormat(kind) {
@@ -139,10 +172,10 @@ function rememberDocument() {
 function searchFiles(query) {
   const term = query.trim().toLocaleLowerCase('de'); const results = [];
   if (!term) return getRecent().map(path => state.files.find(file => file.path === path && !file.error)).filter(Boolean).map(file => ({ file }));
-  for (const file of state.files) {
+  for (const file of workspaceFiles()) {
     if (file.error) continue;
     if (file.path.toLocaleLowerCase('de').includes(term)) results.push({ file });
-    const content = state.folderTarget && file.path === state.path ? editor.value : file.text;
+    const content = window.GraphitTabs ? window.GraphitTabs.textFor(file) : state.folderTarget && file.path === state.path ? editor.value : file.text;
     content.split(/\r?\n/).forEach((line, index) => { if (line.toLocaleLowerCase('de').includes(term)) results.push({ file, line: index + 1, context: line.trim() }); });
   }
   return results.slice(0, 100);
@@ -168,5 +201,5 @@ window.addEventListener('keydown', event => {
   if (key === 'p') { event.preventDefault(); openSearch(); }
   if (document.activeElement === editor && ['b', 'i', 'k'].includes(key)) { event.preventDefault(); applyFormat({ b: 'bold', i: 'italic', k: 'link' }[key]); }
 });
-window.FolioFeatures = { renderEditor, showEditor, documentOpened() { if (area !== 'preview') $('preview-tab').click(); if (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) { sidebarHidden = true; preferences.sidebarHidden = true; storePreferences(); applyLayout(); } rememberDocument(); }, workspaceChanged, selectArea(name) { area = name; applyLayout(); } };
+window.FolioFeatures = { renderEditor, showEditor, bindEditor: bindFeatureEditor, documentOpened() { if (area !== 'preview') $('preview-tab').click(); if (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) { sidebarHidden = true; preferences.sidebarHidden = true; storePreferences(); applyLayout(); } rememberDocument(); if (window.GraphitEnhancements) window.GraphitEnhancements.documentOpened(); }, workspaceChanged, selectArea(name) { area = name; applyLayout(); } };
 updateEditorOptions(); applyLayout(); renderEditor(); if (state.directory) workspaceChanged();

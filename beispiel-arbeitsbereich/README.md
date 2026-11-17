@@ -1,6 +1,6 @@
 # Mein Beispiel-Arbeitsbereich
 
-Dieser Ordner enthält zwei Beispielprojekte. Öffne ihn in Folio über **Projektordner öffnen**, um den Dateibaum, die Kanban-Boards und die projektübergreifende TODO-Übersicht auszuprobieren.
+Dieser Ordner enthält zwei Beispielprojekte. Öffne ihn in Graphit über **Projektordner öffnen**, um den Dateibaum, die Kanban-Boards und die projektübergreifende TODO-Übersicht auszuprobieren.
 
 ## Arbeitsbereichsweite Aufgaben
 

@@ -2,10 +2,10 @@
 
 // Increment this version whenever the cached application files change.
 const CACHE_PREFIX = `folio-shell:${encodeURIComponent(self.registration.scope)}:`;
-const CACHE_NAME = `${CACHE_PREFIX}v1`;
+const CACHE_NAME = `${CACHE_PREFIX}v3`;
 const ASSETS = [
   './', './index.html', './styles.css', './core.js', './app.js', './features.js',
-  './pwa.js', './manifest.webmanifest', './pwa-icons/icon-192.png',
+  './pwa.js', './tabs.js', './enhancements.js', './theme.js', './assets/graphit-mark.svg', './manifest.webmanifest', './pwa-icons/icon-192.png',
   './pwa-icons/icon-512.png', './pwa-icons/icon-512-maskable.png'
 ];
 const SCOPE = new URL(self.registration.scope);

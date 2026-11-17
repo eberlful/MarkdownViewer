@@ -1,36 +1,39 @@
 'use strict';
 
 const $ = id => document.getElementById(id);
-const editor = $('editor');
-const state = { directory: null, file: null, name: 'Willkommen.md', path: '', saved: '', dirty: false, files: [], tree: [], projects: [], project: '', dragged: null, folderTarget: false, expanded: new Set(), scanErrors: [], moving: false };
+let editor = $('editor');
+const state = { directory: null, file: null, name: 'Willkommen.md', path: '', saved: '', dirty: false, isNew: false, files: [], tree: [], projects: [], project: '', dragged: null, folderTarget: false, expanded: new Set(), scanErrors: [], moving: false };
 const welcome = `# Willkommen in deinem Projekt\n\nEin guter Ort für große Ideen und die kleinen Schritte dazwischen. Hier kannst du Gedanken sammeln, Entscheidungen festhalten und sehen, was als Nächstes ansteht.\n\n## Die nächsten Schritte\n\n- [x] Einen Platz für meine Ideen schaffen\n- [ ] Einen Projektordner öffnen\n- [ ] Das erste Ticket anlegen\n\n> Auch große Projekte beginnen mit einem kleinen Schritt.\n`;
 const statusNames = { offen: 'Offen', in_arbeit: 'In Arbeit', erledigt: 'Erledigt' };
 let workspaceEpoch = 0, refreshEpoch = 0, lastWorkspace = null, storageWrites = Promise.resolve();
 let saveTimer = null, saveInFlight = null, saveError = '', documentEpoch = 0;
+let boardPriority = '', todoProject = '', todoFile = '';
 
 function toast(message) { const el = $('toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('show'), 4000); }
 function updateStatus() {
-  state.dirty = editor.value !== state.saved;
+  state.dirty = state.isNew || editor.value !== state.saved;
   $('save-status').classList.toggle('saved', !state.dirty);
   $('save-status').innerHTML = `<i></i> ${saveInFlight ? 'Wird gespeichert …' : saveError ? 'Speichern fehlgeschlagen' : state.dirty ? 'Nicht gespeichert' : 'Gespeichert'}`;
   $('save-status').title = saveError;
   $('editor-filename').textContent = state.name;
   $('crumb-file').textContent = state.path || state.name;
   $('word-count').textContent = `${(editor.value.trim().match(/\S+/g) || []).length} Wörter`;
-  document.title = `${state.dirty ? '● ' : ''}${state.name} – Folio`;
+  document.title = `${state.dirty ? '● ' : ''}${state.name} – Graphit`;
 }
-function changed() { updateStatus(); renderPreview(); renderBoard(); renderTodos(); if (window.FolioFeatures) window.FolioFeatures.renderEditor(); }
+function changed() { updateStatus(); if (window.GraphitTabs) window.GraphitTabs.capture(); if (window.GraphitEnhancements) window.GraphitEnhancements.changed(); renderPreview(); renderBoard(); renderTodos(); if (window.FolioFeatures) window.FolioFeatures.renderEditor(); }
 function edited() { saveError = ''; changed(); scheduleAutosave(); }
-function canLeave() { if (saveInFlight) { toast('Bitte warte, bis das Speichern abgeschlossen ist.'); return false; } return !state.dirty || window.confirm('Es gibt ungespeicherte Änderungen. Möchtest du sie verwerfen?'); }
-function loadDocument(text, name, file = null, path = '', folderTarget = false) {
+function canLeave(tabSwitch = false) { if (saveInFlight || state.moving) { toast('Bitte warte, bis das Speichern abgeschlossen ist.'); return false; } if (tabSwitch && window.GraphitTabs) return true; return !state.dirty || window.confirm('Es gibt ungespeicherte Änderungen. Möchtest du sie verwerfen?'); }
+function loadDocument(text, name, file = null, path = '', folderTarget = false, isNew = false) {
+  if (window.GraphitTabs) window.GraphitTabs.prepareNew();
   clearTimeout(saveTimer); saveError = ''; documentEpoch++;
-  state.folderTarget = folderTarget; editor.value = text; state.name = name; state.path = path; state.file = file; state.saved = text;
+  state.folderTarget = folderTarget; state.isNew = isNew; editor.value = text; state.name = name; state.path = path; state.file = file; state.saved = text;
   const project = path.split('/')[0]; if (path.includes('/') && state.projects.some(p => p.name === project)) state.project = project;
   if (folderTarget && path) { const parts = path.split('/'); parts.pop(); let parent = ''; for (const part of parts) { parent = parent ? `${parent}/${part}` : part; state.expanded.add(parent); } }
   changed(); renderFiles(); if (window.FolioFeatures) window.FolioFeatures.documentOpened(); $('sidebar').classList.remove('open'); $('toggle-sidebar').setAttribute('aria-expanded', 'false');
 }
-window.addEventListener('beforeunload', event => { if (state.dirty) { event.preventDefault(); event.returnValue = ''; } });
-editor.addEventListener('input', edited);
+window.addEventListener('beforeunload', event => { if (state.dirty || (window.GraphitTabs && window.GraphitTabs.hasDirty())) { event.preventDefault(); event.returnValue = ''; } });
+function bindAppEditor(element) { element.addEventListener('input', edited); }
+bindAppEditor(editor);
 window.addEventListener('keydown', event => {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 's') return;
   event.preventDefault();
@@ -55,7 +58,7 @@ function inline(text) {
   const links = FolioCore.inlineLinks(text); let result = '', position = 0;
   for (const link of links) {
     result += inlineBase(text.slice(position, link.start));
-    const resolution = FolioCore.resolveLink(state.path, link.target, link.type, state.folderTarget && state.directory ? state.files : []);
+    const resolution = FolioCore.resolveLink(state.path, link.target, link.type, state.folderTarget && state.directory ? workspaceFiles() : []);
     const label = escapeHTML(link.label);
     if (resolution.kind === 'external') result += `<a href="${safeURL(link.target)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
     else if (resolution.kind === 'local') result += `<a href="#" data-folio-path="${escapeHTML(resolution.path)}">${label}</a>`;
@@ -90,11 +93,11 @@ function renderBacklinks() {
   const message = text => { const p = document.createElement('p'); p.className = 'backlinks-empty'; p.textContent = text; list.append(p); };
   if (!state.directory || !state.folderTarget || !state.path) { message('Öffne eine Datei aus einem Arbeitsbereich, um Backlinks zu sehen.'); return; }
   const groups = [];
-  for (const file of state.files) {
+  for (const file of workspaceFiles()) {
     if (file.error) continue;
-    const text = file.path === state.path ? editor.value : file.text;
+    const text = window.GraphitTabs ? window.GraphitTabs.textFor(file) : file.path === state.path ? editor.value : file.text;
     if (file.linkText !== text) { file.linkText = text; file.links = FolioCore.findLinks(text); }
-    const links = file.links.filter(link => { const result = FolioCore.resolveLink(file.path, link.target, link.type, state.files); return result.kind === 'local' && result.path === state.path; });
+    const links = file.links.filter(link => { const result = FolioCore.resolveLink(file.path, link.target, link.type, workspaceFiles()); return result.kind === 'local' && result.path === state.path; });
     if (links.length) groups.push({ file, links });
   }
   const total = groups.reduce((n, group) => n + group.links.length, 0); $('backlinks-count').textContent = total ? String(total) : '';
@@ -121,12 +124,13 @@ $('preview').addEventListener('change', event => {
 });
 $('preview').addEventListener('click', event => {
   const link = event.target.closest('a[data-folio-path]'); if (!link) return;
-  event.preventDefault(); const file = state.files.find(item => item.path === link.dataset.folioPath); if (file) openProjectFile(file);
+  event.preventDefault(); const file = workspaceFiles().find(item => item.path === link.dataset.folioPath); if (file) openProjectFile(file);
 });
 
+function workspaceFiles() { return window.GraphitTabs ? window.GraphitTabs.workspaceFiles() : state.files; }
 const markdownFile = name => /\.(?:md|markdown)$/i.test(name);
 function currentProject() { return state.projects.find(project => project.name === state.project); }
-function ticketFiles() { return state.files.filter(file => file.path.startsWith(`${state.project}/tickets/`)); }
+function ticketFiles() { return workspaceFiles().filter(file => file.path.startsWith(`${state.project}/tickets/`)); }
 function makeMessage(title, description) { const box = document.createElement('div'); box.className = 'board-empty'; const strong = document.createElement('strong'); strong.textContent = title; const p = document.createElement('p'); p.textContent = description; box.append(strong, p); return box; }
 function renderBoard() {
   const board = $('board'), errors = $('ticket-errors'), select = $('board-project');
@@ -136,14 +140,14 @@ function renderBoard() {
   if (!state.directory) { board.append(makeMessage('Öffne einen Arbeitsbereich', 'Wähle einen Ordner, um Projekte und ihre Tickets zu sehen.')); return; }
   if (!state.projects.length) { board.append(makeMessage('Noch keine Projekte gefunden', 'Jeder direkte Unterordner des Arbeitsbereichs ist ein Projekt.')); return; }
   const tickets = [];
-  for (const file of ticketFiles()) { if (file.error) { const p = document.createElement('p'); p.textContent = `${file.path}: ${file.error}`; errors.append(p); continue; } const ticket = FolioCore.parseTicket(file.text); if (ticket.error) { const p = document.createElement('p'); p.textContent = `${file.path}: ${ticket.error}`; errors.append(p); } else tickets.push({ ...ticket, file }); }
+  for (const file of ticketFiles()) { if (file.error) { const p = document.createElement('p'); p.textContent = `${file.path}: ${file.error}`; errors.append(p); continue; } const ticket = FolioCore.parseTicket(window.GraphitTabs ? window.GraphitTabs.textFor(file) : file.text); if (ticket.error) { const p = document.createElement('p'); p.textContent = `${file.path}: ${ticket.error}`; errors.append(p); } else tickets.push({ ...ticket, file }); }
   tickets.sort((a, b) => a.title.localeCompare(b.title, 'de') || a.file.path.localeCompare(b.file.path, 'de'));
   FolioCore.statuses.forEach((status, index) => {
-    const col = document.createElement('div'); col.className = 'column'; const heading = document.createElement('h3'); heading.textContent = statusNames[status]; const count = document.createElement('span'); count.textContent = tickets.filter(t => t.status === status).length; heading.append(count); col.append(heading);
+    const col = document.createElement('div'); col.className = 'column'; const heading = document.createElement('h3'); heading.textContent = statusNames[status]; const count = document.createElement('span'); count.textContent = tickets.filter(t => t.status === status && (!boardPriority || t.priority === boardPriority)).length; heading.append(count); col.append(heading);
     col.addEventListener('dragover', e => { e.preventDefault(); col.classList.add('drag-over'); });
     col.addEventListener('dragleave', e => { if (!col.contains(e.relatedTarget)) col.classList.remove('drag-over'); });
     col.addEventListener('drop', e => { e.preventDefault(); col.classList.remove('drag-over'); if (state.dragged) moveTicket(state.dragged, status); state.dragged = null; });
-    for (const ticket of tickets.filter(t => t.status === status)) {
+    for (const ticket of tickets.filter(t => t.status === status && (!boardPriority || t.priority === boardPriority))) {
       const card = document.createElement('div'); card.className = `card${status === 'erledigt' ? ' done' : ''}`; card.draggable = true;
       const open = document.createElement('button'); open.className = 'ticket-open'; open.textContent = ticket.title; open.title = `Ticket öffnen: ${ticket.file.path}`; open.onclick = () => openProjectFile(ticket.file); card.append(open);
       const priority = document.createElement('span'); priority.className = `priority priority-${ticket.priority}`; priority.textContent = `Priorität: ${ticket.priority}`; card.append(priority);
@@ -159,7 +163,7 @@ function renderBoard() {
 async function moveTicket(path, status) {
   if (state.moving) return;
   const file = state.files.find(item => item.path === path); if (!file) return;
-  if (state.path === path && state.dirty) { toast('Bitte speichere oder verwirf zuerst die Änderungen an diesem Ticket.'); return; }
+  if ((state.path === path && state.dirty) || (window.GraphitTabs && window.GraphitTabs.isDirty(path))) { toast('Bitte speichere oder verwirf zuerst die Änderungen an diesem Ticket.'); return; }
   state.moving = true; editor.readOnly = true; $('save').disabled = true; renderBoard();
   try {
     const latest = await (await file.handle.getFile()).text();
@@ -167,41 +171,71 @@ async function moveTicket(path, status) {
     const updated = FolioCore.setTicketStatus(latest, status); if (updated === null) throw new Error('Ungültiger Ticket-Header.');
     const writable = await file.handle.createWritable(); await writable.write(updated); await writable.close();
     file.text = updated;
+    if (window.GraphitTabs) window.GraphitTabs.externalUpdate(path, updated);
     if (state.path === path && !state.dirty) { editor.value = updated; state.saved = updated; updateStatus(); renderPreview(); }
     renderTodos(); toast('Ticketstatus gespeichert.');
   } catch (err) { toast(`Ticket konnte nicht verschoben werden: ${err.message}`); }
   finally { state.moving = false; editor.readOnly = false; $('save').disabled = false; renderBoard(); }
 }
 $('board-project').onchange = event => { state.project = event.target.value; renderBoard(); };
-$('new-ticket').onclick = async () => {
+$('board-priority').onchange = event => { boardPriority = event.target.value; renderBoard(); };
+async function createTicket(input, priority = 'mittel') {
   const project = currentProject(); if (!project) return;
-  const input = prompt('Titel des neuen Tickets:'); if (input === null) return; const title = input.trim(); if (!title || /[\r\n]/.test(title)) { toast('Bitte einen einzeiligen Titel eingeben.'); return; }
+  const title = input.trim(); if (!title || /[\r\n]/.test(title) || !FolioCore.priorities.includes(priority)) { toast('Bitte einen einzeiligen Titel eingeben.'); return; }
   try {
     const dir = await project.handle.getDirectoryHandle('tickets', { create: true });
     const base = title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'ticket';
     let name = `${base}.md`, number = 2;
     while (true) { try { await dir.getFileHandle(name); name = `${base}-${number++}.md`; } catch (err) { if (err.name === 'NotFoundError') break; throw err; } }
-    const handle = await dir.getFileHandle(name, { create: true }); const text = `---\ntitle: ${JSON.stringify(title)}\nstatus: offen\npriority: mittel\n---\n\n`;
+    const handle = await dir.getFileHandle(name, { create: true }); const text = `---\ntitle: ${JSON.stringify(title)}\nstatus: offen\npriority: ${priority}\n---\n\n`;
     const writable = await handle.createWritable(); await writable.write(text); await writable.close(); state.expanded.add(project.name); state.expanded.add(`${project.name}/tickets`); await refreshFiles(); toast('Ticket angelegt. Öffne es im Board, um die Beschreibung zu bearbeiten.');
   } catch (err) { toast(`Ticket konnte nicht angelegt werden: ${err.message}`); await refreshFiles(); }
-};
+}
+$('new-ticket').onclick = () => { if (currentProject()) { $('ticket-dialog').showModal(); $('ticket-name').focus(); } };
+$('cancel-ticket').onclick = () => $('ticket-dialog').close();
+$('ticket-form').onsubmit = event => { event.preventDefault(); const title = $('ticket-name').value; const priority = $('ticket-priority').value; $('ticket-dialog').close(); $('ticket-name').value = ''; createTicket(title, priority); };
 function renderTodos() {
   const list = $('todos'); list.replaceChildren();
   if (!state.directory) { list.append(makeMessage('Öffne einen Arbeitsbereich', 'Die TODO-Übersicht durchsucht alle Markdown-Dateien im ausgewählten Ordner.')); return; }
+  const projectSelect = $('todo-project'), fileSelect = $('todo-file');
+  projectSelect.replaceChildren(); fileSelect.replaceChildren();
+  function option(select, value, label) { const node = document.createElement('option'); node.value = value; node.textContent = label; select.append(node); }
+  option(projectSelect, '', 'Alle Projekte');
+  for (const project of state.projects) option(projectSelect, project.name, project.name);
+  option(projectSelect, ':root:', 'Arbeitsbereich'); projectSelect.value = todoProject;
+  option(fileSelect, '', 'Alle Dateien');
+  for (const file of workspaceFiles().filter(file => !todoProject || (todoProject === ':root:' ? !file.path.includes('/') : file.path.startsWith(`${todoProject}/`)))) option(fileSelect, file.path, file.path);
+  fileSelect.value = todoFile;
   const groups = new Map();
-  for (const file of state.files) {
-    if (file.error) continue;
-    const text = state.path === file.path && state.folderTarget ? editor.value : file.text;
+  for (const file of workspaceFiles()) {
+    if (file.error || (todoFile && file.path !== todoFile) || (todoProject && (todoProject === ':root:' ? file.path.includes('/') : !file.path.startsWith(`${todoProject}/`)))) continue;
+    const text = window.GraphitTabs ? window.GraphitTabs.textFor(file) : state.path === file.path && state.folderTarget ? editor.value : file.text;
     const parts = file.path.split('/'); const group = parts.length > 1 ? `project:${parts[0]}` : 'root:';
     for (const todo of FolioCore.findTodos(text)) { if (!groups.has(group)) groups.set(group, []); groups.get(group).push({ ...todo, file }); }
   }
-  if (!groups.size) { list.append(makeMessage('Alles erledigt', 'In den lesbaren Markdown-Dateien wurden keine offenen TODOs gefunden.')); }
+  if (!groups.size) { list.append(makeMessage('Keine offenen TODOs', 'Für die aktuelle Auswahl wurden keine offenen TODOs gefunden.')); }
   for (const [key, todos] of [...groups].sort((a,b) => a[0].localeCompare(b[0], 'de'))) {
     const name = key === 'root:' ? 'Arbeitsbereich' : key.slice('project:'.length);
     const section = document.createElement('section'); section.className = 'todo-group'; const heading = document.createElement('h3'); heading.textContent = `${name} · ${todos.length}`; section.append(heading);
-    for (const todo of todos) { const button = document.createElement('button'); button.className = 'todo-item'; const title = document.createElement('strong'); title.textContent = `○  ${todo.text}`; const path = document.createElement('span'); path.textContent = `${todo.file.path}:${todo.line}`; button.append(title, path); button.onclick = () => openProjectFile(todo.file, todo.line); section.append(button); } list.append(section);
+    for (const todo of todos) { const row = document.createElement('div'); row.className = 'todo-row'; const check = document.createElement('input'); check.type = 'checkbox'; check.setAttribute('aria-label', `Aufgabe erledigen: ${todo.text}`); check.onchange = () => completeTodo(todo); const button = document.createElement('button'); button.className = 'todo-item'; const title = document.createElement('strong'); title.textContent = todo.text; const path = document.createElement('span'); path.textContent = `${todo.file.path}:${todo.line}`; button.append(title, path); button.onclick = () => openProjectFile(todo.file, todo.line); row.append(check, button); section.append(row); } list.append(section);
   }
   if (state.scanErrors.length) { const warning = document.createElement('p'); warning.className = 'scan-warning'; warning.textContent = `${state.scanErrors.length} Einträge konnten nicht gelesen werden. Aktualisiere den Arbeitsbereich und prüfe die Berechtigungen.`; list.prepend(warning); }
+}
+$('todo-project').onchange = event => { todoProject = event.target.value; todoFile = ''; renderTodos(); };
+$('todo-file').onchange = event => { todoFile = event.target.value; renderTodos(); };
+async function completeTodo(todo) {
+  await openProjectFile(todo.file, todo.line);
+  if (!state.folderTarget || state.path !== todo.file.path) { $('todos-tab').click(); renderTodos(); return; }
+  const current = FolioCore.findTodos(editor.value).find(item => item.line === todo.line && item.text === todo.text);
+  if (!current) { toast('Die Aufgabe wurde geändert. Bitte prüfe die aktuelle Datei.'); $('todos-tab').click(); renderTodos(); return; }
+  const lines = editor.value.split(/(?<=\n)/), index = todo.line - 1;
+  // Locate only the checkbox token in the verified task line.
+  const marker = lines[index]?.match(/^(\s*(?:[-+*]|\d+[.)])\s+\[) (\])/);
+  if (!marker) { toast('Die Aufgabe konnte nicht geändert werden.'); $('todos-tab').click(); renderTodos(); return; }
+  const offset = lines.slice(0, index).reduce((sum, line) => sum + line.length, 0) + marker[1].length;
+  editor.focus(); editor.setSelectionRange(offset, offset + 1);
+  if (!document.execCommand('insertText', false, 'x')) { editor.setRangeText('x', offset, offset + 1); edited(); }
+  $('todos-tab').click();
 }
 async function scanDirectory(dir, prefix = '', scan = { files: [], errors: [], rootError: null }) {
   const nodes = []; const entries = [];
@@ -221,7 +255,7 @@ async function readWorkspace(dir) {
   return { ...scan, tree };
 }
 function applyWorkspaceScan(scan) {
-  state.files = scan.files; state.scanErrors = scan.errors; state.tree = scan.tree; state.projects = scan.tree.filter(node => node.kind === 'directory');
+  state.files = scan.files; if (window.GraphitTabs) window.GraphitTabs.reconcile(scan.files); state.scanErrors = scan.errors; state.tree = scan.tree; state.projects = scan.tree.filter(node => node.kind === 'directory');
   if (!state.projects.some(p => p.name === state.project)) state.project = state.projects[0]?.name || '';
   renderFiles(); renderBoard(); renderTodos(); renderPreview();
   if (state.scanErrors.length) toast(`${state.scanErrors.length} Einträge konnten nicht gelesen werden.`);
@@ -244,13 +278,14 @@ function renderFiles() {
   addNodes(state.tree, list);
 }
 async function openProjectFile(file, line = null) {
+  if (window.GraphitTabs) { const selected = window.GraphitTabs.selectPath(file.path); if (selected === null) return; if (selected) { if (window.FolioFeatures) window.FolioFeatures.documentOpened(); if (line) { if (window.FolioFeatures) window.FolioFeatures.showEditor(); focusLine(line); } return; } }
   if (state.path === file.path && state.folderTarget) { if (window.FolioFeatures) window.FolioFeatures.documentOpened(); if (line) { if (window.FolioFeatures) window.FolioFeatures.showEditor(); focusLine(line); } return; }
-  if (!canLeave()) return;
+  if (!canLeave(true)) return;
   clearTimeout(saveTimer); const previousText = editor.value, epoch = documentEpoch, directory = state.directory;
   try {
     const contents = await (await file.handle.getFile()).text();
     if (epoch !== documentEpoch || directory !== state.directory) return;
-    if ((editor.value !== previousText || saveInFlight) && !canLeave()) { scheduleAutosave(); return; }
+    if ((editor.value !== previousText || saveInFlight) && !canLeave(true)) { scheduleAutosave(); return; }
     loadDocument(contents, file.name, file.handle, file.path, true);
     if (line) { if (window.FolioFeatures) window.FolioFeatures.showEditor(); focusLine(line); }
   } catch (err) { scheduleAutosave(); toast(`Datei konnte nicht geöffnet werden: ${err.message}`); }
@@ -280,7 +315,10 @@ async function storeLastWorkspace(handle) {
 async function activateWorkspace(dir, epoch) {
   const scan = await readWorkspace(dir);
   if (epoch !== workspaceEpoch) return false;
+  if (saveInFlight || state.moving) { toast('Bitte warte, bis das Speichern abgeschlossen ist.'); return false; }
+  if (state.directory && state.directory !== dir && window.GraphitTabs && window.GraphitTabs.hasUnsavedNew()) { toast('Bitte speichere oder schließe neue Entwürfe, bevor du den Arbeitsbereich wechselst.'); return false; }
   ++refreshEpoch;
+  if (state.directory !== dir) { todoProject = ''; todoFile = ''; if (window.GraphitTabs) window.GraphitTabs.workspaceWillChange(); }
   // A document from the previous workspace remains open under its original file handle.
   if (state.folderTarget && state.path && state.directory !== dir) { state.folderTarget = false; state.path = ''; }
   if (!state.file) state.folderTarget = true;
@@ -288,6 +326,8 @@ async function activateWorkspace(dir, epoch) {
   $('project-name').textContent = dir.name; $('crumb-project').textContent = dir.name; $('project-caption').textContent = 'Arbeitsbereich';
   $('restore-folder').hidden = true; workspaceMessage();
   applyWorkspaceScan(scan); updateStatus();
+  if (window.GraphitTabs) window.GraphitTabs.workspaceChanged(dir);
+  if (window.GraphitEnhancements) window.GraphitEnhancements.workspaceChanged(dir);
   return true;
 }
 async function restoreOnStart() {
@@ -325,9 +365,9 @@ $('open-folder').onclick = async () => {
   } catch (err) { if (err.name !== 'AbortError' && epoch === workspaceEpoch) workspaceMessage(`Ordner konnte nicht geöffnet werden: ${err.message}`); }
 };
 $('refresh-files').onclick = refreshFiles;
-$('open-file').onclick = () => { if (canLeave()) $('file-input').click(); };
-$('file-input').onchange = async event => { const file = event.target.files[0]; if (file) { try { loadDocument(await file.text(), file.name); } catch (err) { toast(`Datei konnte nicht geöffnet werden: ${err.message}`); } } event.target.value = ''; };
-$('new-file').onclick = () => { if (!canLeave()) return; const name = prompt('Name der neuen Markdown-Datei:', 'Neues-Dokument.md'); if (name === null) return; const clean = name.trim(); if (!clean || /[\\/]/.test(clean) || clean === '.' || clean === '..') { toast('Bitte einen gültigen Dateinamen ohne Schrägstrich eingeben.'); return; } loadDocument('', /\.(md|markdown)$/i.test(clean) ? clean : `${clean}.md`, null, '', !!state.directory); toast('Neue Datei angelegt. Speichere sie, um sie dauerhaft abzulegen.'); };
+$('open-file').onclick = () => { if (canLeave(true)) $('file-input').click(); };
+$('file-input').onchange = async event => { const file = event.target.files[0]; if (file) { try { const contents = await file.text(); if (canLeave(true)) loadDocument(contents, file.name); } catch (err) { toast(`Datei konnte nicht geöffnet werden: ${err.message}`); } } event.target.value = ''; };
+$('new-file').onclick = () => { if (!canLeave(true)) return; const name = prompt('Name der neuen Markdown-Datei:', 'Neues-Dokument.md'); if (name === null) return; const clean = name.trim(); if (!clean || /[\\/]/.test(clean) || clean === '.' || clean === '..') { toast('Bitte einen gültigen Dateinamen ohne Schrägstrich eingeben.'); return; } const filename = /\.(md|markdown)$/i.test(clean) ? clean : `${clean}.md`; if (state.directory && workspaceFiles().some(file => file.path === filename)) { toast('Eine Datei oder ein Entwurf mit diesem Namen ist bereits vorhanden.'); return; } loadDocument('', filename, null, state.directory ? filename : '', !!state.directory, true); toast('Neue Datei angelegt. Speichere sie, um sie dauerhaft abzulegen.'); };
 function scheduleAutosave() {
   clearTimeout(saveTimer);
   if (state.file && state.dirty && !saveError) saveTimer = setTimeout(() => saveDocument(false), 900);
@@ -342,28 +382,32 @@ async function saveDocument(manual = true) {
         let handle = state.file;
         if (handle) {
           const latest = await (await handle.getFile()).text();
-          if (latest !== original && (!manual || !window.confirm('Die Datei wurde außerhalb von Folio geändert. Möchtest du sie mit deinem aktuellen Entwurf überschreiben?'))) {
-            saveError = 'Die Datei wurde außerhalb von Folio geändert. Dein Entwurf bleibt erhalten; mit Speichern kannst du den Konflikt lösen.'; toast(saveError); return;
+          if (latest !== original && (!manual || !window.confirm('Die Datei wurde außerhalb von Graphit geändert. Möchtest du sie mit deinem aktuellen Entwurf überschreiben?'))) {
+            saveError = 'Die Datei wurde außerhalb von Graphit geändert. Dein Entwurf bleibt erhalten; mit Speichern kannst du den Konflikt lösen.'; toast(saveError); return;
           }
         } else {
-          try { await state.directory.getFileHandle(state.name); if (!window.confirm(`„${state.name}“ existiert bereits. Überschreiben?`)) return; }
+          const parts = (state.path || state.name).split('/'); const leaf = parts.pop(); let parent = state.directory;
+          if (!leaf || parts.some(part => !part || part === '.' || part === '..')) throw new Error('Ungültiger Dateipfad');
+          for (const part of parts) parent = await parent.getDirectoryHandle(part);
+          try { await parent.getFileHandle(leaf); if (!window.confirm(`„${leaf}“ existiert bereits. Überschreiben?`)) return; }
           catch (err) { if (err.name !== 'NotFoundError') throw err; }
-          handle = await state.directory.getFileHandle(state.name, { create: true });
+          handle = await parent.getFileHandle(leaf, { create: true });
         }
         const writable = await handle.createWritable(); await writable.write(snapshot); await writable.close();
-        if (epoch === documentEpoch) { state.file = handle; state.path ||= state.name; state.saved = snapshot; saveError = ''; }
+        if (epoch === documentEpoch) { state.file = handle; state.path ||= state.name; state.saved = snapshot; state.isNew = false; saveError = ''; }
         await refreshFiles();
+        if (window.GraphitTabs) window.GraphitTabs.capture();
         if (manual) toast('Datei gespeichert.');
       } else if (manual) {
         const blob = new Blob([snapshot], { type: 'text/markdown;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = state.name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-        if (epoch === documentEpoch) { state.saved = snapshot; saveError = ''; } toast('Markdown-Datei heruntergeladen.');
+        if (epoch === documentEpoch) { state.saved = snapshot; state.isNew = false; saveError = ''; } toast('Markdown-Datei heruntergeladen.');
       }
     } catch (err) { if (epoch === documentEpoch) saveError = `Speichern fehlgeschlagen: ${err.message}`; if (err.name !== 'AbortError') toast(saveError); }
   };
   saveInFlight = work(); updateStatus();
-  try { await saveInFlight; } finally { saveInFlight = null; updateStatus(); if (epoch === documentEpoch && state.dirty && !saveError) scheduleAutosave(); }
+  try { await saveInFlight; } finally { saveInFlight = null; updateStatus(); if (window.GraphitTabs) window.GraphitTabs.capture(); if (epoch === documentEpoch && state.dirty && !saveError) scheduleAutosave(); }
 }
 $('save').onclick = () => saveDocument(true);
 for (const name of ['preview', 'board', 'todos']) $(`${name}-tab`).onclick = () => { for (const other of ['preview', 'board', 'todos']) { const selected = name === other; $(`${other}-tab`).setAttribute('aria-selected', String(selected)); $(`${other}-view`).hidden = !selected; } if (window.FolioFeatures) window.FolioFeatures.selectArea(name); };
-editor.value = welcome; state.saved = ''; changed();
+editor.value = welcome; state.saved = welcome; changed();
 const restoreReady = restoreOnStart();
