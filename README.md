@@ -8,9 +8,17 @@ Folio ist ein lokaler Arbeitsplatz für Projektdokumentation und Aufgaben. Die A
 
 Der Zugriff auf einen Ordner setzt einen Chromium-basierten Browser mit File System Access API und einen sicheren Kontext voraus. Falls das direkte Öffnen nicht funktioniert, die Anwendung über einen lokalen HTTP-Server auf `localhost` öffnen. Der Browser verwaltet die Ordnerberechtigungen und kann sie erneut anfordern. Ohne Ordnerzugriff lassen sich einzelne Dateien öffnen und als Download speichern; Projektbaum, Kanban und die arbeitsbereichsweite TODO-Übersicht benötigen einen geöffneten Ordner. Die Aktualisieren-Schaltfläche neben **Dateien** liest den Ordner erneut ein.
 
-Folio merkt sich den zuletzt erfolgreich geöffneten Arbeitsbereich lokal im Browserspeicher und öffnet ihn nach dem Neuladen wieder, sofern die Berechtigung noch besteht. Andernfalls erscheint **Letzten Arbeitsbereich wiederherstellen**, um den Zugriff erneut freizugeben. Wird der Browserspeicher gelöscht oder ist der Ordner nicht mehr verfügbar, muss er erneut ausgewählt werden. Der gespeicherte Zugriff gilt nur für dasselbe Browserprofil und dieselbe Adresse der Anwendung. Der Inhalt des Editors bleibt bei der Wiederherstellung erhalten; zuletzt geöffnete Dateien und ungespeicherte Änderungen werden nicht sitzungsübergreifend wiederhergestellt.
+Folio merkt sich den zuletzt erfolgreich geöffneten Arbeitsbereich lokal im Browserspeicher und öffnet ihn nach dem Neuladen wieder, sofern die Berechtigung noch besteht. Andernfalls erscheint **Letzten Arbeitsbereich wiederherstellen**, um den Zugriff erneut freizugeben. Wird der Browserspeicher gelöscht oder ist der Ordner nicht mehr verfügbar, muss er erneut ausgewählt werden. Der gespeicherte Zugriff gilt nur für dasselbe Browserprofil und dieselbe Adresse der Anwendung. Der Inhalt des Editors bleibt bei der Wiederherstellung erhalten. Zuletzt geöffnete Dateipfade werden pro Arbeitsbereich lokal gespeichert; ungespeicherte Änderungen werden nicht sitzungsübergreifend wiederhergestellt.
 
-Änderungen im Editor werden ausdrücklich mit **Speichern** oder **Strg+S** (auf macOS **⌘S**) gesichert. Vor dem Verwerfen ungespeicherter Änderungen wird gewarnt. Das Begrüßungsdokument ist ein bearbeitbares Beispiel.
+Änderungen an bereits vorhandenen Dateien mit schreibbarem Dateizugriff werden nach einer kurzen Schreibpause automatisch gespeichert. Der Status in der Dokumentleiste zeigt ausstehende Änderungen, laufende Speicherung und Fehler. Wurde die Datei außerhalb von Folio geändert, wird das automatische Speichern angehalten und der Entwurf bleibt im Editor erhalten. Über **Speichern** oder **Strg+S** (auf macOS **⌘S**) kann der Konflikt nach ausdrücklicher Bestätigung durch Überschreiben gelöst werden. Während eines Speichervorgangs wird der Dokumentwechsel kurz gesperrt. Vor dem Verwerfen ungespeicherter Änderungen wird gewarnt.
+
+Neue Dokumente müssen zunächst ausdrücklich gespeichert werden. Eine über den einfachen Dateidialog geöffnete Datei kann mangels schreibbarem Dateizugriff weiterhin nur als Download gespeichert werden; für diese Fälle erfolgt kein automatischer Download. Das Begrüßungsdokument ist ein bearbeitbares Beispiel.
+
+## Arbeiten mit Dokumenten
+
+Die Schaltflächen **Editor**, **Geteilt** und **Vorschau** bestimmen die Dokumentansicht. Im geteilten Modus kann der Trenner mit der Maus oder per Pfeiltasten verschoben werden; die Seitenleiste lässt sich über das Menü ein- und ausblenden. Ansichtsmodus, Teilung, Seitenleiste, Zeilennummern und Gliederung merkt sich Folio lokal im Browser. Die Tabs **Kanban** und **TODOs** öffnen die jeweilige Projektansicht.
+
+Mit **Strg+P** (macOS **⌘P**) öffnet sich die Suche über Dateinamen, Pfade und Inhalte im Arbeitsbereich. Ohne Suchtext zeigt sie zuletzt geöffnete Dateien; Inhaltstreffer führen zur betreffenden Zeile und berücksichtigen den aktuellen Editorstand. Nicht lesbare Dateien können nicht durchsucht werden. Die Gliederung springt zu Markdown-Überschriften, und die Editorleiste fügt Formatierung ein. **Strg/⌘+B**, **Strg/⌘+I** und **Strg/⌘+K** formatieren Auswahl als fett, kursiv beziehungsweise Link.
 
 ## Kanban-Tickets
 
@@ -34,7 +42,7 @@ Tickets lassen sich per Drag-and-drop oder mit den Pfeiltasten der Karte zwische
 
 Der Tab **TODOs** sammelt offene Markdown-Checkboxen wie `- [ ] Aufgabe` aus den lesbaren Markdown-Dateien und gruppiert sie nach Projekt. Ein Klick öffnet die Quelldatei an der entsprechenden Zeile. Erledigte Checkboxen und Aufgaben in Codeblöcken erscheinen nicht. Der Inhalt des aktuell geöffneten Dokuments wird auch vor dem Speichern berücksichtigt.
 
-Die Vorschau unterstützt Überschriften, Absätze, Listen, Checkboxen, Links, Bilder, Fett- und Kursivschrift, Zitate, Trennlinien und Codeblöcke. HTML wird als Text angezeigt. Die Vorschau ist eine bewusst einfache Markdown-Implementierung und unterstützt nicht alle Markdown-Sonderfälle.
+Die Vorschau unterstützt Überschriften, Absätze, Listen, Checkboxen, Links, Bilder, Fett- und Kursivschrift, Zitate, Trennlinien und Codeblöcke. Ein Klick auf eine Checkbox ändert die zugehörige Markdown-Zeile im Editor; es gelten dieselben Speicherregeln wie für andere Änderungen. HTML wird als Text angezeigt. Die Vorschau ist eine bewusst einfache Markdown-Implementierung und unterstützt nicht alle Markdown-Sonderfälle.
 
 Die Anwendung arbeitet lokal und synchronisiert keine Dateien. Externe Bilder und Links können beim Aufruf dennoch Netzwerkverbindungen auslösen.
 

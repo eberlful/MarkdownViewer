@@ -1,0 +1,172 @@
+'use strict';
+
+// Presentation settings and recent paths contain no document contents.
+const preferences = (() => {
+  try { const value = JSON.parse(localStorage.getItem('folio-ui') || '{}'); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; } catch { return {}; }
+})();
+function storePreferences() { try { localStorage.setItem('folio-ui', JSON.stringify(preferences)); } catch {} }
+let area = 'preview';
+let mode = ['editor', 'split', 'preview'].includes(preferences.mode) ? preferences.mode : 'split';
+let split = Math.min(75, Math.max(25, Number(preferences.split) || 50));
+let sidebarHidden = preferences.sidebarHidden === undefined ? !!(window.matchMedia && window.matchMedia('(max-width: 700px)').matches) : !!preferences.sidebarHidden;
+
+function applyLayout() {
+  const boardOpen = area !== 'preview';
+  $('editor-panel').hidden = boardOpen || mode === 'preview';
+  $('result-panel').hidden = !boardOpen && mode === 'editor';
+  $('splitter').hidden = boardOpen || mode !== 'split';
+  $('workspace').style.setProperty('--split', `${split}%`);
+  $('workspace').classList.toggle('single', boardOpen || mode !== 'split');
+  document.querySelectorAll('[data-mode]').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.mode === mode && !boardOpen)); });
+  $('splitter').setAttribute('aria-valuenow', String(Math.round(split)));
+  $('app').classList.toggle('sidebar-hidden', sidebarHidden);
+  $('toggle-sidebar').setAttribute('aria-expanded', String(!sidebarHidden));
+}
+function setMode(next) {
+  mode = next; preferences.mode = mode; storePreferences();
+  if (area !== 'preview') $('preview-tab').click();
+  applyLayout();
+}
+function showEditor() { if (area !== 'preview') $('preview-tab').click(); if (mode === 'preview') setMode('split'); }
+document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+$('toggle-sidebar').onclick = () => { sidebarHidden = !sidebarHidden; preferences.sidebarHidden = sidebarHidden; storePreferences(); applyLayout(); };
+function setSplit(value) { split = Math.min(75, Math.max(25, value)); preferences.split = split; storePreferences(); applyLayout(); }
+$('splitter').addEventListener('keydown', event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setSplit(split + (event.key === 'ArrowLeft' ? -2 : 2)); } });
+$('splitter').addEventListener('pointerdown', event => {
+  event.preventDefault(); const el = $('splitter'); el.setPointerCapture(event.pointerId);
+  const move = e => { const rect = $('workspace').getBoundingClientRect(); setSplit((e.clientX - rect.left) / rect.width * 100); };
+  const end = () => { el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', end); el.removeEventListener('pointercancel', end); };
+  el.addEventListener('pointermove', move); el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+});
+
+function highlightMarkdown(text) {
+  let inFence = false;
+  return text.split('\n').map(line => {
+    const escaped = escapeHTML(line);
+    if (/^ {0,3}(`{3,}|~{3,})/.test(line)) { inFence = !inFence; return `<span class="syntax-code">${escaped}</span>`; }
+    if (inFence) return `<span class="syntax-code">${escaped}</span>`;
+    if (/^#{1,6}\s/.test(line)) return `<span class="syntax-heading">${escaped}</span>`;
+    if (/^\s*>/.test(line)) return `<span class="syntax-quote">${escaped}</span>`;
+    return escaped.replace(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\)|\[[ xX]\])/g, '<span class="syntax-mark">$1</span>');
+  }).map(line => `<span class="syntax-line">${line || '&#8203;'}</span>`).join('');
+}
+function renderEditor() {
+  $('editor-highlight').innerHTML = highlightMarkdown(editor.value);
+  renderLineNumbers();
+  const outline = $('outline'); outline.replaceChildren();
+  let inFence = false;
+  editor.value.split('\n').forEach((line, index) => {
+    if (/^ {0,3}(`{3,}|~{3,})/.test(line)) { inFence = !inFence; return; }
+    if (inFence) return;
+    const match = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/); if (!match) return;
+    const button = document.createElement('button'); button.textContent = match[2]; button.style.paddingLeft = `${8 + (match[1].length - 1) * 12}px`; button.onclick = () => focusLine(index + 1); outline.append(button);
+  });
+  if (!outline.children.length) { const empty = document.createElement('span'); empty.textContent = 'Keine Überschriften'; outline.append(empty); }
+  syncScroll();
+}
+function renderLineNumbers() {
+  const highlight = $('editor-highlight'), gutter = $('line-numbers');
+  if (editor.clientWidth) highlight.style.width = `${editor.clientWidth}px`;
+  gutter.replaceChildren();
+  highlight.querySelectorAll('.syntax-line').forEach((line, index) => { const number = document.createElement('div'); number.textContent = index + 1; number.style.height = `${line.getBoundingClientRect().height}px`; gutter.append(number); });
+}
+function syncScroll() { $('editor-highlight').scrollTop = editor.scrollTop; $('editor-highlight').scrollLeft = editor.scrollLeft; $('line-numbers').scrollTop = editor.scrollTop; }
+editor.addEventListener('scroll', syncScroll);
+window.addEventListener('resize', () => { renderLineNumbers(); syncScroll(); });
+if (window.ResizeObserver) new window.ResizeObserver(() => { renderLineNumbers(); syncScroll(); }).observe(editor);
+function applyFormat(kind) {
+  const start = editor.selectionStart, end = editor.selectionEnd, selected = editor.value.slice(start, end);
+  let replacement, selectStart, selectEnd;
+  if (kind === 'list') {
+    const from = editor.value.lastIndexOf('\n', start - 1) + 1; let to = editor.value.indexOf('\n', end); if (to < 0) to = editor.value.length;
+    editor.setSelectionRange(from, to); replacement = editor.value.slice(from, to).split('\n').map(line => `- ${line}`).join('\n'); selectStart = from; selectEnd = from + replacement.length;
+  } else {
+    const before = { bold: '**', italic: '*', link: '[', code: '```\n' }[kind];
+    const after = { bold: '**', italic: '*', link: '](https://)', code: '\n```' }[kind];
+    replacement = before + selected + after; selectStart = start + before.length; selectEnd = selectStart + selected.length;
+  }
+  editor.focus();
+  // insertText participates in the browser's native undo history.
+  document.execCommand('insertText', false, replacement);
+  editor.setSelectionRange(selectStart, selectEnd);
+}
+document.querySelectorAll('[data-format]').forEach(button => { button.addEventListener('mousedown', e => e.preventDefault()); button.addEventListener('click', () => applyFormat(button.dataset.format)); });
+$('toggle-lines').onclick = () => { preferences.lines = !preferences.lines; storePreferences(); updateEditorOptions(); };
+$('toggle-outline').onclick = () => { preferences.outline = !preferences.outline; storePreferences(); updateEditorOptions(); };
+function updateEditorOptions() { $('line-numbers').hidden = !preferences.lines; $('toggle-lines').setAttribute('aria-pressed', String(!!preferences.lines)); if (preferences.lines) renderLineNumbers(); $('outline').hidden = !preferences.outline; $('toggle-outline').setAttribute('aria-expanded', String(!!preferences.outline)); }
+
+let recentPaths = [], recentWorkspace = null, recentWrites = Promise.resolve();
+async function recentRecords(write) {
+  const db = await storageDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction('settings', write ? 'readwrite' : 'readonly');
+      const store = tx.objectStore('settings'); const request = store.get('recentWorkspaces');
+      request.onsuccess = () => {
+        const records = Array.isArray(request.result) ? request.result : [];
+        if (write) { write(records).then(updated => { store.put(updated, 'recentWorkspaces'); }).catch(reject); }
+        else resolve(records);
+      };
+      request.onerror = () => reject(request.error); tx.oncomplete = () => { if (write) resolve(); }; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error);
+    });
+  } finally { db.close(); }
+}
+async function sameWorkspace(a, b) { try { return a === b || !!(a && b && a.isSameEntry && await a.isSameEntry(b)); } catch { return false; } }
+async function matchingRecent(records, handle) { for (const item of records) if (await sameWorkspace(item.handle, handle)) return item; return null; }
+function workspaceChanged() {
+  const handle = state.directory; recentWorkspace = handle; recentPaths = [];
+  recentWrites = recentWrites.catch(() => {}).then(async () => {
+    const records = await recentRecords(); const item = await matchingRecent(records, handle);
+    if (recentWorkspace === handle) recentPaths = item && Array.isArray(item.paths) ? item.paths : [];
+  }).catch(() => {});
+}
+function getRecent() { return recentPaths; }
+function rememberDocument() {
+  if (!state.directory || !state.folderTarget || !state.path) return;
+  const handle = state.directory, path = state.path;
+  recentPaths = [path, ...recentPaths.filter(item => item !== path)].slice(0, 12);
+  recentWrites = recentWrites.catch(() => {}).then(async () => {
+    // Compare File System handles outside a live transaction: permission checks can be asynchronous.
+    const records = await recentRecords(); let item = await matchingRecent(records, handle);
+    if (!item) { item = { handle, paths: [] }; records.push(item); }
+    item.paths = [path, ...item.paths.filter(existing => existing !== path)].slice(0, 12);
+    const db = await storageDatabase();
+    try { await new Promise((resolve, reject) => { const tx = db.transaction('settings', 'readwrite'); tx.objectStore('settings').put(records, 'recentWorkspaces'); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error); }); }
+    finally { db.close(); }
+    if (recentWorkspace === handle) recentPaths = item.paths;
+  }).catch(() => {});
+}
+function searchFiles(query) {
+  const term = query.trim().toLocaleLowerCase('de'); const results = [];
+  if (!term) return getRecent().map(path => state.files.find(file => file.path === path && !file.error)).filter(Boolean).map(file => ({ file }));
+  for (const file of state.files) {
+    if (file.error) continue;
+    if (file.path.toLocaleLowerCase('de').includes(term)) results.push({ file });
+    const content = state.folderTarget && file.path === state.path ? editor.value : file.text;
+    content.split(/\r?\n/).forEach((line, index) => { if (line.toLocaleLowerCase('de').includes(term)) results.push({ file, line: index + 1, context: line.trim() }); });
+  }
+  return results.slice(0, 100);
+}
+function renderSearch() {
+  const results = $('search-results'); results.replaceChildren();
+  const found = searchFiles($('search-input').value);
+  if (!found.length) { const message = document.createElement('p'); message.textContent = !state.directory ? 'Öffne einen Arbeitsbereich, um Dateien zu durchsuchen.' : $('search-input').value.trim() ? 'Keine Treffer gefunden.' : 'Noch keine zuletzt geöffneten Dateien.'; results.append(message); return; }
+  if (!$('search-input').value.trim()) { const heading = document.createElement('p'); heading.textContent = 'Zuletzt geöffnet'; results.append(heading); }
+  for (const result of found) {
+    const button = document.createElement('button'); const path = document.createElement('strong'); path.textContent = result.file.path + (result.line ? `:${result.line}` : ''); button.append(path);
+    if (result.context) { const context = document.createElement('span'); context.textContent = result.context; button.append(context); }
+    button.onclick = () => { $('search-dialog').close(); openProjectFile(result.file, result.line); }; results.append(button);
+  }
+  if (state.scanErrors.length) { const warning = document.createElement('p'); warning.textContent = 'Einige Dateien konnten nicht gelesen werden; die Ergebnisse sind möglicherweise unvollständig.'; results.append(warning); }
+}
+function openSearch() { if (!$('search-dialog').open) $('search-dialog').showModal(); $('search-input').value = ''; renderSearch(); $('search-input').focus(); }
+$('open-search').onclick = openSearch; $('top-search').onclick = openSearch; $('close-search').onclick = () => $('search-dialog').close(); $('search-input').addEventListener('input', renderSearch);
+$('search-input').addEventListener('keydown', event => { if (event.key === 'ArrowDown') { const first = $('search-results').querySelector('button'); if (first) { event.preventDefault(); first.focus(); } } });
+window.addEventListener('keydown', event => {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+  const key = event.key.toLowerCase();
+  if (key === 'p') { event.preventDefault(); openSearch(); }
+  if (document.activeElement === editor && ['b', 'i', 'k'].includes(key)) { event.preventDefault(); applyFormat({ b: 'bold', i: 'italic', k: 'link' }[key]); }
+});
+window.FolioFeatures = { renderEditor, showEditor, documentOpened() { if (area !== 'preview') $('preview-tab').click(); if (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) { sidebarHidden = true; preferences.sidebarHidden = true; storePreferences(); applyLayout(); } rememberDocument(); }, workspaceChanged, selectArea(name) { area = name; applyLayout(); } };
+updateEditorOptions(); applyLayout(); renderEditor(); if (state.directory) workspaceChanged();

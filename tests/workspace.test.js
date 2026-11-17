@@ -6,10 +6,10 @@ const vm = require('node:vm');
 const core = require('../core.js');
 
 class Element {
-  constructor() { this.value = ''; this.children = []; this.dataset = {}; this.classList = { add() {}, remove() {}, toggle() {} }; }
+  constructor() { this.value = ''; this.children = []; this.dataset = {}; this.style = { setProperty() {} };  this.classList = { add() {}, remove() {}, toggle() {} }; }
   append(...items) { this.children.push(...items); }
   replaceChildren(...items) { this.children = items; }
-  setAttribute() {} addEventListener() {} focus() {} setSelectionRange() {} prepend(...items) { this.children.unshift(...items); }
+  setAttribute() {} addEventListener() {} querySelectorAll() { return []; } focus() {} setSelectionRange() {} prepend(...items) { this.children.unshift(...items); }
 }
 function file(name, contents) {
   return { kind: 'file', name, text: contents, async getFile() { return { text: async () => this.text }; }, async createWritable() { const self = this; return { async write(text) { self.text = text; }, async close() {} }; } };
@@ -166,4 +166,69 @@ test('Strg+S und Cmd+S verwenden die Speicheraktion und unterdrücken den Browse
   assert.equal(key({ repeat: true }), true); assert.equal(saves, 2);
   save.disabled = true; assert.equal(key(), true); assert.equal(saves, 2);
   assert.equal(key({ shiftKey: true }), false); assert.equal(key({ ctrlKey: false }), false);
+});
+
+test('Automatisches Speichern erhält neuere Eingaben und erkennt externe Änderungen', async () => {
+  const target = file('notiz.md', 'Original');
+  const { context } = app(); context.target = target;
+  vm.runInContext("loadDocument('Original', 'notiz.md', target, 'notiz.md', true); editor.value = 'Erste Änderung'; changed()", context);
+  let release; const wait = new Promise(resolve => { release = resolve; });
+  target.createWritable = async () => ({ async write(text) { await wait; target.text = text; }, async close() {} });
+  const saving = vm.runInContext('saveDocument(false)', context);
+  await new Promise(resolve => setImmediate(resolve));
+  vm.runInContext("editor.value = 'Neuere Änderung'; changed()", context);
+  release(); await saving;
+  assert.equal(target.text, 'Erste Änderung');
+  assert.equal(vm.runInContext('state.saved', context), 'Erste Änderung');
+  assert.equal(vm.runInContext('state.dirty', context), true);
+  target.text = 'Extern geändert';
+  await vm.runInContext('saveDocument(false)', context);
+  assert.equal(target.text, 'Extern geändert');
+  assert.equal(vm.runInContext('editor.value', context), 'Neuere Änderung');
+  assert.match(vm.runInContext('saveError', context), /außerhalb/);
+});
+
+test('Vorschau ordnet Checkboxen auch in Zitaten der richtigen Quellzeile zu', () => {
+  const { context } = app();
+  const html = vm.runInContext("markdown('# Titel\\n\\n> - [ ] Erste\\n\\n- [x] Zweite')", context);
+  assert.match(html, /data-task-line="3"/);
+  assert.match(html, /data-task-line="5"/);
+  assert.doesNotMatch(html, /type="checkbox" disabled/);
+});
+
+test('Öffnen einer verschachtelten Datei klappt alle übergeordneten Ordner auf', async () => {
+  const target = file('note.md', '# Notiz');
+  const root = directory('workspace', { Projekt: directory('Projekt', { docs: directory('docs', { 'note.md': target }) }) });
+  const { context } = app(); context.root = root;
+  await vm.runInContext('state.directory = root; refreshFiles()', context);
+  await vm.runInContext('openProjectFile(state.files[0])', context);
+  assert.equal(vm.runInContext("state.expanded.has('Projekt') && state.expanded.has('Projekt/docs')", context), true);
+});
+
+
+test('Suche berücksichtigt Pfade, Inhalte und den ungespeicherten Editorstand', async () => {
+  const target = file('notiz.md', 'alter Inhalt');
+  const root = directory('workspace', { Projekt: directory('Projekt', { 'notiz.md': target, 'andere.md': file('andere.md', 'Erste Zeile\nEin Suchwort hier') }) });
+  const { context } = app(); context.root = root;
+  context.localStorage = { getItem() { return null; }, setItem() {} };
+  await vm.runInContext('state.directory = root; refreshFiles()', context);
+  await vm.runInContext("openProjectFile(state.files.find(f => f.name === 'notiz.md'))", context);
+  vm.runInContext("editor.value = 'Noch nicht gespeichert: SUCHWORT'; changed()", context);
+  vm.runInContext(fs.readFileSync('features.js', 'utf8'), context);
+  const results = vm.runInContext("searchFiles('suchwort').map(r => [r.file.path, r.line])", context);
+  assert.deepEqual(JSON.parse(JSON.stringify(results)), [['Projekt/andere.md', 2], ['Projekt/notiz.md', 1]]);
+  assert.equal(vm.runInContext("searchFiles('notiz.md')[0].file.path", context), 'Projekt/notiz.md');
+});
+
+
+test('Ein Schreibfehler erhält den Entwurf und meldet den Fehler', async () => {
+  const target = file('notiz.md', 'Original');
+  target.createWritable = async () => { throw new Error('Keine Schreibberechtigung'); };
+  const { context } = app(); context.target = target;
+  vm.runInContext("loadDocument('Original', 'notiz.md', target, 'notiz.md', true); editor.value = 'Entwurf'; changed()", context);
+  await vm.runInContext('saveDocument(false)', context);
+  assert.equal(target.text, 'Original');
+  assert.equal(vm.runInContext('editor.value', context), 'Entwurf');
+  assert.equal(vm.runInContext('state.dirty', context), true);
+  assert.match(vm.runInContext('saveError', context), /Keine Schreibberechtigung/);
 });

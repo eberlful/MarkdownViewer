@@ -6,26 +6,31 @@ const state = { directory: null, file: null, name: 'Willkommen.md', path: '', sa
 const welcome = `# Willkommen in deinem Projekt\n\nEin guter Ort für große Ideen und die kleinen Schritte dazwischen. Hier kannst du Gedanken sammeln, Entscheidungen festhalten und sehen, was als Nächstes ansteht.\n\n## Die nächsten Schritte\n\n- [x] Einen Platz für meine Ideen schaffen\n- [ ] Einen Projektordner öffnen\n- [ ] Das erste Ticket anlegen\n\n> Auch große Projekte beginnen mit einem kleinen Schritt.\n`;
 const statusNames = { offen: 'Offen', in_arbeit: 'In Arbeit', erledigt: 'Erledigt' };
 let workspaceEpoch = 0, refreshEpoch = 0, lastWorkspace = null, storageWrites = Promise.resolve();
+let saveTimer = null, saveInFlight = null, saveError = '', documentEpoch = 0;
 
 function toast(message) { const el = $('toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('show'), 4000); }
 function updateStatus() {
   state.dirty = editor.value !== state.saved;
   $('save-status').classList.toggle('saved', !state.dirty);
-  $('save-status').innerHTML = `<i></i> ${state.dirty ? 'Nicht gespeichert' : 'Gespeichert'}`;
+  $('save-status').innerHTML = `<i></i> ${saveInFlight ? 'Wird gespeichert …' : saveError ? 'Speichern fehlgeschlagen' : state.dirty ? 'Nicht gespeichert' : 'Gespeichert'}`;
+  $('save-status').title = saveError;
   $('editor-filename').textContent = state.name;
   $('crumb-file').textContent = state.path || state.name;
   $('word-count').textContent = `${(editor.value.trim().match(/\S+/g) || []).length} Wörter`;
   document.title = `${state.dirty ? '● ' : ''}${state.name} – Folio`;
 }
-function changed() { updateStatus(); renderPreview(); renderBoard(); renderTodos(); }
-function canLeave() { return !state.dirty || window.confirm('Es gibt ungespeicherte Änderungen. Möchtest du sie verwerfen?'); }
+function changed() { updateStatus(); renderPreview(); renderBoard(); renderTodos(); if (window.FolioFeatures) window.FolioFeatures.renderEditor(); }
+function edited() { saveError = ''; changed(); scheduleAutosave(); }
+function canLeave() { if (saveInFlight) { toast('Bitte warte, bis das Speichern abgeschlossen ist.'); return false; } return !state.dirty || window.confirm('Es gibt ungespeicherte Änderungen. Möchtest du sie verwerfen?'); }
 function loadDocument(text, name, file = null, path = '', folderTarget = false) {
+  clearTimeout(saveTimer); saveError = ''; documentEpoch++;
   state.folderTarget = folderTarget; editor.value = text; state.name = name; state.path = path; state.file = file; state.saved = text;
   const project = path.split('/')[0]; if (path.includes('/') && state.projects.some(p => p.name === project)) state.project = project;
-  changed(); renderFiles(); $('sidebar').classList.remove('open'); $('toggle-sidebar').setAttribute('aria-expanded', 'false');
+  if (folderTarget && path) { const parts = path.split('/'); parts.pop(); let parent = ''; for (const part of parts) { parent = parent ? `${parent}/${part}` : part; state.expanded.add(parent); } }
+  changed(); renderFiles(); if (window.FolioFeatures) window.FolioFeatures.documentOpened(); $('sidebar').classList.remove('open'); $('toggle-sidebar').setAttribute('aria-expanded', 'false');
 }
 window.addEventListener('beforeunload', event => { if (state.dirty) { event.preventDefault(); event.returnValue = ''; } });
-editor.addEventListener('input', changed);
+editor.addEventListener('input', edited);
 window.addEventListener('keydown', event => {
   if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 's') return;
   event.preventDefault();
@@ -59,21 +64,21 @@ function inline(text) {
   }
   return result + inlineBase(text.slice(position));
 }
-function markdown(text) {
-  const lines = text.replace(/\r\n?/g, '\n').split('\n'); let out = '', list = '', paragraph = [], code = null, codeFence = null, quote = [];
+function markdown(text, lineOffset = 0) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n'); let out = '', list = '', paragraph = [], code = null, codeFence = null, quote = [], quoteStart = 0;
   const closeList = () => { if (list) { out += `</${list}>`; list = ''; } };
   const flushParagraph = () => { if (paragraph.length) { out += `<p>${inline(paragraph.join(' '))}</p>`; paragraph = []; } };
-  const flushQuote = () => { if (quote.length) { out += `<blockquote>${markdown(quote.join('\n'))}</blockquote>`; quote = []; } };
-  for (const line of lines) {
+  const flushQuote = () => { if (quote.length) { out += `<blockquote>${markdown(quote.join('\n'), quoteStart)}</blockquote>`; quote = []; } };
+  for (const [index, line] of lines.entries()) {
     const fence = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
     if (code !== null) { if (fence && fence[1][0] === codeFence[0] && fence[1].length >= codeFence.length && !fence[2].trim()) { out += `<pre><code>${escapeHTML(code.join('\n'))}</code></pre>`; code = null; codeFence = null; } else code.push(line); continue; }
     if (fence) { flushParagraph(); flushQuote(); closeList(); code = []; codeFence = fence[1]; continue; }
     if (/^\s*<!--\s*kanban:(?:start|end)\s*-->\s*$/.test(line)) { flushParagraph(); flushQuote(); closeList(); continue; }
-    const q = line.match(/^\s*>\s?(.*)$/); if (q) { flushParagraph(); closeList(); quote.push(q[1]); continue; } flushQuote();
+    const q = line.match(/^\s*>\s?(.*)$/); if (q) { flushParagraph(); closeList(); if (!quote.length) quoteStart = lineOffset + index; quote.push(q[1]); continue; } flushQuote();
     if (!line.trim()) { flushParagraph(); closeList(); continue; }
     const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*\s*$/); if (heading) { flushParagraph(); closeList(); const n = heading[1].length; out += `<h${n}>${inline(heading[2])}</h${n}>`; continue; }
     if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flushParagraph(); closeList(); out += '<hr>'; continue; }
-    const item = line.match(/^\s*(?:([-+*])\s+|(\d+)\.\s+)(.*)$/); if (item) { flushParagraph(); const type = item[2] ? 'ol' : 'ul'; if (list !== type) { closeList(); list = type; out += `<${type}>`; } const task = item[3].match(/^\[([ xX])\]\s*(.*)$/); out += task ? `<li><input type="checkbox" disabled ${task[1].toLowerCase() === 'x' ? 'checked' : ''}> ${inline(task[2])}</li>` : `<li>${inline(item[3])}</li>`; continue; }
+    const item = line.match(/^\s*(?:([-+*])\s+|(\d+)\.\s+)(.*)$/); if (item) { flushParagraph(); const type = item[2] ? 'ol' : 'ul'; if (list !== type) { closeList(); list = type; out += `<${type}>`; } const task = item[3].match(/^\[([ xX])\]\s*(.*)$/); out += task ? `<li><input type="checkbox" data-task-line="${lineOffset + index + 1}" aria-label="Aufgabe ${task[1].toLowerCase() === 'x' ? 'wieder öffnen' : 'erledigen'}" ${task[1].toLowerCase() === 'x' ? 'checked' : ''}> ${inline(task[2])}</li>` : `<li>${inline(item[3])}</li>`; continue; }
     closeList(); paragraph.push(line.trim());
   }
   flushParagraph(); flushQuote(); closeList(); if (code !== null) out += `<pre><code>${escapeHTML(code.join('\n'))}</code></pre>`;
@@ -101,6 +106,19 @@ function renderBacklinks() {
   }
   if (state.scanErrors.length) message('Einige Dateien konnten nicht gelesen werden; die Liste ist möglicherweise unvollständig.');
 }
+$('preview').addEventListener('change', event => {
+  const box = event.target; if (!box.matches('input[data-task-line]')) return;
+  const lines = editor.value.split(/(?<=\n)/); const index = Number(box.dataset.taskLine) - 1;
+  const match = lines[index]?.match(/^(\s*(?:>\s*)*\s*(?:[-+*]|\d+\.)\s+\[)([ xX])(\])/);
+  if (!match) { renderPreview(); return; }
+  const offset = lines.slice(0, index).reduce((sum, line) => sum + line.length, 0) + match[1].length;
+  const start = editor.selectionStart, end = editor.selectionEnd, scroll = editor.scrollTop, value = box.checked ? 'x' : ' ';
+  editor.focus(); editor.setSelectionRange(offset, offset + 1);
+  const inserted = document.execCommand('insertText', false, value);
+  if (!inserted) { editor.setRangeText(value, offset, offset + 1); edited(); }
+  editor.setSelectionRange(start, end); editor.scrollTop = scroll;
+  const updated = $('preview').querySelector(`input[data-task-line="${index + 1}"]`); if (updated) updated.focus();
+});
 $('preview').addEventListener('click', event => {
   const link = event.target.closest('a[data-folio-path]'); if (!link) return;
   event.preventDefault(); const file = state.files.find(item => item.path === link.dataset.folioPath); if (file) openProjectFile(file);
@@ -226,9 +244,16 @@ function renderFiles() {
   addNodes(state.tree, list);
 }
 async function openProjectFile(file, line = null) {
-  if (state.path === file.path && state.folderTarget && state.dirty) { if (line) focusLine(line); return; }
+  if (state.path === file.path && state.folderTarget) { if (window.FolioFeatures) window.FolioFeatures.documentOpened(); if (line) { if (window.FolioFeatures) window.FolioFeatures.showEditor(); focusLine(line); } return; }
   if (!canLeave()) return;
-  try { const contents = await file.handle.getFile(); loadDocument(await contents.text(), file.name, file.handle, file.path, true); if (line) focusLine(line); } catch (err) { toast(`Datei konnte nicht geöffnet werden: ${err.message}`); }
+  clearTimeout(saveTimer); const previousText = editor.value, epoch = documentEpoch, directory = state.directory;
+  try {
+    const contents = await (await file.handle.getFile()).text();
+    if (epoch !== documentEpoch || directory !== state.directory) return;
+    if ((editor.value !== previousText || saveInFlight) && !canLeave()) { scheduleAutosave(); return; }
+    loadDocument(contents, file.name, file.handle, file.path, true);
+    if (line) { if (window.FolioFeatures) window.FolioFeatures.showEditor(); focusLine(line); }
+  } catch (err) { scheduleAutosave(); toast(`Datei konnte nicht geöffnet werden: ${err.message}`); }
 }
 function focusLine(line) { const lines = editor.value.split('\n'); let offset = 0; for (let i = 0; i < Math.min(line - 1, lines.length); i++) offset += lines[i].length + 1; editor.focus(); editor.setSelectionRange(offset, Math.min(offset + (lines[line - 1] || '').length, editor.value.length)); const style = getComputedStyle(editor); editor.scrollTop = Math.max(0, (line - 3) * parseFloat(style.lineHeight)); }
 function workspaceMessage(text = '') { const el = $('workspace-message'); el.textContent = text; el.hidden = !text; }
@@ -259,7 +284,7 @@ async function activateWorkspace(dir, epoch) {
   // A document from the previous workspace remains open under its original file handle.
   if (state.folderTarget && state.path && state.directory !== dir) { state.folderTarget = false; state.path = ''; }
   if (!state.file) state.folderTarget = true;
-  state.directory = dir; state.project = ''; state.expanded.clear();
+  state.directory = dir; state.project = ''; state.expanded.clear(); if (window.FolioFeatures) window.FolioFeatures.workspaceChanged();
   $('project-name').textContent = dir.name; $('crumb-project').textContent = dir.name; $('project-caption').textContent = 'Arbeitsbereich';
   $('restore-folder').hidden = true; workspaceMessage();
   applyWorkspaceScan(scan); updateStatus();
@@ -303,8 +328,42 @@ $('refresh-files').onclick = refreshFiles;
 $('open-file').onclick = () => { if (canLeave()) $('file-input').click(); };
 $('file-input').onchange = async event => { const file = event.target.files[0]; if (file) { try { loadDocument(await file.text(), file.name); } catch (err) { toast(`Datei konnte nicht geöffnet werden: ${err.message}`); } } event.target.value = ''; };
 $('new-file').onclick = () => { if (!canLeave()) return; const name = prompt('Name der neuen Markdown-Datei:', 'Neues-Dokument.md'); if (name === null) return; const clean = name.trim(); if (!clean || /[\\/]/.test(clean) || clean === '.' || clean === '..') { toast('Bitte einen gültigen Dateinamen ohne Schrägstrich eingeben.'); return; } loadDocument('', /\.(md|markdown)$/i.test(clean) ? clean : `${clean}.md`, null, '', !!state.directory); toast('Neue Datei angelegt. Speichere sie, um sie dauerhaft abzulegen.'); };
-$('save').onclick = async () => { try { if (state.file || (state.directory && state.folderTarget)) { let handle = state.file; if (!handle) { try { await state.directory.getFileHandle(state.name); if (!confirm(`„${state.name}“ existiert bereits. Überschreiben?`)) return; } catch (err) { if (err.name !== 'NotFoundError') throw err; } handle = await state.directory.getFileHandle(state.name, { create: true }); } const writable = await handle.createWritable(); await writable.write(editor.value); await writable.close(); state.file = handle; state.path ||= state.name; state.saved = editor.value; await refreshFiles(); updateStatus(); toast('Datei gespeichert.'); } else { const blob = new Blob([editor.value], { type: 'text/markdown;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = state.name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); state.saved = editor.value; updateStatus(); toast('Markdown-Datei heruntergeladen.'); } } catch (err) { if (err.name !== 'AbortError') toast(`Speichern fehlgeschlagen: ${err.message}`); } };
-for (const name of ['preview', 'board', 'todos']) $(`${name}-tab`).onclick = () => { for (const other of ['preview', 'board', 'todos']) { const selected = name === other; $(`${other}-tab`).setAttribute('aria-selected', String(selected)); $(`${other}-view`).hidden = !selected; } $('footer-view').textContent = { preview: 'VORSCHAU', board: 'KANBAN', todos: 'TODOS' }[name]; };
-$('toggle-sidebar').onclick = () => { const open = $('sidebar').classList.toggle('open'); $('toggle-sidebar').setAttribute('aria-expanded', String(open)); };
+function scheduleAutosave() {
+  clearTimeout(saveTimer);
+  if (state.file && state.dirty && !saveError) saveTimer = setTimeout(() => saveDocument(false), 900);
+}
+async function saveDocument(manual = true) {
+  clearTimeout(saveTimer);
+  if (saveInFlight) { if (manual) await saveInFlight; else return; }
+  const epoch = documentEpoch, snapshot = editor.value, original = state.saved;
+  const work = async () => {
+    try {
+      if (state.file || (manual && state.directory && state.folderTarget)) {
+        let handle = state.file;
+        if (handle) {
+          const latest = await (await handle.getFile()).text();
+          if (latest !== original && (!manual || !window.confirm('Die Datei wurde außerhalb von Folio geändert. Möchtest du sie mit deinem aktuellen Entwurf überschreiben?'))) {
+            saveError = 'Die Datei wurde außerhalb von Folio geändert. Dein Entwurf bleibt erhalten; mit Speichern kannst du den Konflikt lösen.'; toast(saveError); return;
+          }
+        } else {
+          try { await state.directory.getFileHandle(state.name); if (!window.confirm(`„${state.name}“ existiert bereits. Überschreiben?`)) return; }
+          catch (err) { if (err.name !== 'NotFoundError') throw err; }
+          handle = await state.directory.getFileHandle(state.name, { create: true });
+        }
+        const writable = await handle.createWritable(); await writable.write(snapshot); await writable.close();
+        if (epoch === documentEpoch) { state.file = handle; state.path ||= state.name; state.saved = snapshot; saveError = ''; }
+        await refreshFiles();
+        if (manual) toast('Datei gespeichert.');
+      } else if (manual) {
+        const blob = new Blob([snapshot], { type: 'text/markdown;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = state.name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+        if (epoch === documentEpoch) { state.saved = snapshot; saveError = ''; } toast('Markdown-Datei heruntergeladen.');
+      }
+    } catch (err) { if (epoch === documentEpoch) saveError = `Speichern fehlgeschlagen: ${err.message}`; if (err.name !== 'AbortError') toast(saveError); }
+  };
+  saveInFlight = work(); updateStatus();
+  try { await saveInFlight; } finally { saveInFlight = null; updateStatus(); if (epoch === documentEpoch && state.dirty && !saveError) scheduleAutosave(); }
+}
+$('save').onclick = () => saveDocument(true);
+for (const name of ['preview', 'board', 'todos']) $(`${name}-tab`).onclick = () => { for (const other of ['preview', 'board', 'todos']) { const selected = name === other; $(`${other}-tab`).setAttribute('aria-selected', String(selected)); $(`${other}-view`).hidden = !selected; } if (window.FolioFeatures) window.FolioFeatures.selectArea(name); };
 editor.value = welcome; state.saved = ''; changed();
 const restoreReady = restoreOnStart();
