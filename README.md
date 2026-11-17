@@ -10,7 +10,7 @@ Der Zugriff auf einen Ordner setzt einen Chromium-basierten Browser mit File Sys
 
 Folio merkt sich den zuletzt erfolgreich geöffneten Arbeitsbereich lokal im Browserspeicher und öffnet ihn nach dem Neuladen wieder, sofern die Berechtigung noch besteht. Andernfalls erscheint **Letzten Arbeitsbereich wiederherstellen**, um den Zugriff erneut freizugeben. Wird der Browserspeicher gelöscht oder ist der Ordner nicht mehr verfügbar, muss er erneut ausgewählt werden. Der gespeicherte Zugriff gilt nur für dasselbe Browserprofil und dieselbe Adresse der Anwendung. Der Inhalt des Editors bleibt bei der Wiederherstellung erhalten; zuletzt geöffnete Dateien und ungespeicherte Änderungen werden nicht sitzungsübergreifend wiederhergestellt.
 
-Änderungen im Editor werden ausdrücklich mit **Speichern** gesichert. Vor dem Verwerfen ungespeicherter Änderungen wird gewarnt. Das Begrüßungsdokument ist ein bearbeitbares Beispiel.
+Änderungen im Editor werden ausdrücklich mit **Speichern** oder **Strg+S** (auf macOS **⌘S**) gesichert. Vor dem Verwerfen ungespeicherter Änderungen wird gewarnt. Das Begrüßungsdokument ist ein bearbeitbares Beispiel.
 
 ## Kanban-Tickets
 

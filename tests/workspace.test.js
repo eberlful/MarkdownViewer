@@ -150,3 +150,20 @@ test('Ausgewählten Arbeitsbereich nach erneutem Start laden', async () => {
   assert.equal(vm.runInContext('state.directory.name', second.context), 'Merken');
   assert.equal(vm.runInContext('state.files.length', second.context), 1);
 });
+
+test('Strg+S und Cmd+S verwenden die Speicheraktion und unterdrücken den Browserdialog', () => {
+  const listeners = {};
+  const { elements } = app({ addEventListener(type, listener) { listeners[type] = listener; } });
+  let saves = 0;
+  const save = elements.get('save'); save.click = () => { saves++; };
+  const key = (overrides = {}) => {
+    let prevented = false;
+    const event = { key: 's', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false, repeat: false, preventDefault() { prevented = true; }, ...overrides };
+    listeners.keydown(event); return prevented;
+  };
+  assert.equal(key(), true); assert.equal(saves, 1);
+  assert.equal(key({ ctrlKey: false, metaKey: true, key: 'S' }), true); assert.equal(saves, 2);
+  assert.equal(key({ repeat: true }), true); assert.equal(saves, 2);
+  save.disabled = true; assert.equal(key(), true); assert.equal(saves, 2);
+  assert.equal(key({ shiftKey: true }), false); assert.equal(key({ ctrlKey: false }), false);
+});

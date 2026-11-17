@@ -26,6 +26,11 @@ function loadDocument(text, name, file = null, path = '', folderTarget = false) 
 }
 window.addEventListener('beforeunload', event => { if (state.dirty) { event.preventDefault(); event.returnValue = ''; } });
 editor.addEventListener('input', changed);
+window.addEventListener('keydown', event => {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey || event.key.toLowerCase() !== 's') return;
+  event.preventDefault();
+  if (!event.repeat && !$('save').disabled) $('save').click();
+});
 function escapeHTML(text) { return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 function safeURL(value, image = false) {
   const raw = value.replace(/&amp;/g, '&').trim();
