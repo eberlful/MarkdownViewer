@@ -88,3 +88,9 @@ Mit **Schnell erfassen**, der Befehlspalette oder **Strg+Alt+N** (macOS **⌘+Al
 ## PARA-Arbeitsbereich initialisieren
 
 Öffne einen leeren Ordner und wähle in der Befehlspalette **Arbeitsbereich mit PARA initialisieren**. Graphit erstellt eine `index.md` sowie die Ordner Projekte, Bereiche, Ressourcen und Archiv mit erklärenden Beispielen. Unter `Projekte` erhält jedes Projekt einen eigenen Ordner für Projektübersicht und Kanban. Die Datei `.graphit.json` kennzeichnet den Arbeitsbereich als PARA-Arbeitsbereich. Bei einem Fehler nennt Graphit bereits angelegte Dateien; diese können geprüft und bei Bedarf manuell entfernt werden.
+
+## Präsentationsmodus
+
+Mit **Präsentieren** oder dem Befehl **Präsentation starten** wird der aktuelle Editorstand als Folien angezeigt. Überschriften `#` und `##` sowie eine eigene Zeile `---` beginnen eine neue Folie. Ein abgeschlossener YAML-Header am Anfang wird ausgelassen; Trennzeichen in Codeblöcken bleiben erhalten. Längere Folien lassen sich scrollen.
+
+Die Pfeiltasten, Bild-auf/Bild-ab und die Schaltflächen wechseln die Folie; die Leertaste geht vorwärts. Escape oder **Beenden** schließt die Präsentation. Graphit versucht, den Browser-Vollbildmodus zu öffnen; andernfalls füllt die Präsentation das App-Fenster. Checkboxen sind während der Präsentation schreibgeschützt.

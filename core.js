@@ -217,6 +217,31 @@ const FolioCore = (() => {
       lines[link.line - 1] = line.slice(0, link.start) + replacement + line.slice(link.end); count++;
     } return { text: lines.join(''), count };
   }
-  return { statuses, priorities, parseTicket, setTicketStatus, findTodos, inlineTags, findTags, tagKey, inlineLinks, findLinks, resolveLink, headings, anchorLine, rewriteLinks };
+  function splitSlides(text) {
+    const lines = text.replace(/\r\n?/g, '\n').split('\n');
+    let first = 0;
+    if (lines[0] === '---') {
+      const end = lines.indexOf('---', 1);
+      if (end > 0 && lines.slice(1, end).some(line => /^[A-Za-z_][\w-]*:\s*/.test(line))) first = end + 1;
+    }
+    const slides = []; let start = first, fence = null;
+    function push(end) {
+      const part = lines.slice(start, end);
+      if (part.some(line => line.trim())) slides.push({ text: part.join('\n'), startLine: start + 1, endLine: end });
+    }
+    for (let i = first; i < lines.length; i++) {
+      const line = lines[i], marker = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+      if (marker) {
+        if (!fence) fence = marker[1];
+        else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = null;
+        continue;
+      }
+      if (fence) continue;
+      if (/^ {0,3}---[ \t]*$/.test(line)) { push(i); start = i + 1; }
+      else if (/^#{1,2}\s+/.test(line)) { push(i); start = i; }
+    }
+    push(lines.length); return slides;
+  }
+  return { splitSlides, statuses, priorities, parseTicket, setTicketStatus, findTodos, inlineTags, findTags, tagKey, inlineLinks, findLinks, resolveLink, headings, anchorLine, rewriteLinks };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = FolioCore;

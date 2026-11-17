@@ -58,6 +58,7 @@
   document.querySelectorAll('[data-mode], [role="tab"]').forEach(button => button.addEventListener('click', hideStart));
 
   const commands = [
+    { id: 'presentation', label: 'Präsentation starten', run: () => $('start-presentation').click() },
     { id: 'capture', label: 'Schnell erfassen', run: () => $('quick-capture').click() },
     { id: 'projects', label: 'Projektübersicht öffnen', run: () => $('projects-tab').click() },
     { id: 'new', label: 'Neue Notiz', run: () => $('new-file').click() },

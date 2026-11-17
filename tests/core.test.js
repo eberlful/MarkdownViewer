@@ -76,3 +76,17 @@ test('Linkaktualisierung erhält Beschriftungen, Anker und Code', () => {
   assert.equal(result.count, 2);
   assert.equal(result.text, '> [Text](./neu.md#kapitel) und [[./neu#kapitel|alt#kapitel]]\n`[[alt]]`\n```\n[[alt]]\n```');
 });
+
+test('Präsentationsfolien beachten Überschriften, Trenner, YAML und Code', () => {
+  const text = '---\r\ntitle: Test\r\n---\r\n# Titel\r\nText\r\n---\r\n## Zweite\r\n```md\r\n# Code\r\n---\r\n```\r\n### Detail\r\nEnde';
+  const slides = core.splitSlides(text);
+  assert.equal(slides.length, 2);
+  assert.deepEqual(slides.map(s => [s.startLine, s.endLine]), [[4, 5], [7, 13]]);
+  assert.match(slides[1].text, /# Code\n---/);
+});
+
+test('Leere Folien werden ausgelassen und nicht abgeschlossene Metadaten bleiben Inhalt', () => {
+  assert.deepEqual(core.splitSlides('---\n---\n  \n'), []);
+  assert.deepEqual(core.splitSlides('---\ntitle: Test\n# Inhalt').map(s => s.text), ['title: Test', '# Inhalt']);
+  assert.deepEqual(core.splitSlides('vorher\n---\n## Titel').map(s => s.text), ['vorher', '## Titel']);
+});
