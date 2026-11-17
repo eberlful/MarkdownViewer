@@ -412,6 +412,7 @@ test('Gliederung erscheint sofort und folgt dem aktuellen Dokument', async () =>
   app.elements.get('board-tab').click();
   assert.equal(app.elements.get('outline-controls').hidden, true);
   app.elements.get('preview-tab').click();
+  vm.runInContext('editor.clientHeight = 100; editor.scrollHeight = 200; updateOutlineVisibility()', app.context);
   assert.equal(app.elements.get('outline-controls').hidden, false);
   app.elements.get('toggle-outline').click();
   assert.equal(outline.hidden, true);
@@ -422,4 +423,59 @@ test('Vorschau kennzeichnet gleiche Überschriften mit ihrer jeweiligen Quellzei
   const html = vm.runInContext("markdown('# Titel\\n\\n# Titel')", app.context);
   assert.match(html, /data-heading-line="1"/);
   assert.match(html, /data-heading-line="3"/);
+});
+
+
+test('Gliederung folgt dem Scrollbedarf und behält ihre Einstellung', () => {
+  const app = harness(), controls = app.context.document.getElementById('outline-controls');
+  const editor = app.elements.get('editor'), preview = app.elements.get('preview-view');
+  controls.hidden = true; editor.clientHeight = 100; editor.scrollHeight = 80;
+  preview.clientHeight = 100; preview.scrollHeight = 80;
+  vm.runInContext('updateOutlineVisibility()', app.context);
+  assert.equal(controls.hidden, true);
+  editor.scrollHeight = 150;
+  vm.runInContext('updateOutlineVisibility()', app.context);
+  assert.equal(controls.hidden, false);
+  app.elements.get('toggle-outline').click();
+  assert.equal(app.elements.get('outline').hidden, false);
+  editor.scrollHeight = 80;
+  vm.runInContext('updateOutlineVisibility()', app.context);
+  assert.equal(controls.hidden, true);
+  assert.equal(app.elements.get('outline').hidden, false);
+  vm.runInContext("mode = 'split'; updateOutlineVisibility()", app.context);
+  assert.equal(controls.hidden, true);
+  preview.scrollHeight = 120;
+  vm.runInContext('updateOutlineVisibility()', app.context);
+  assert.equal(controls.hidden, false);
+  vm.runInContext("mode = 'preview'; updateOutlineVisibility()", app.context);
+  assert.equal(controls.hidden, false);
+  preview.scrollHeight = 100;
+  vm.runInContext('updateOutlineVisibility()', app.context);
+  assert.equal(controls.hidden, true);
+});
+
+test('Gliederung erzeugt ihren eigenen Scrollbedarf nicht', () => {
+  const app = harness(), controls = app.context.document.getElementById('outline-controls');
+  const editor = app.elements.get('editor'); controls.hidden = false;
+  Object.defineProperty(editor, 'clientHeight', { get: () => controls.style.position === 'absolute' ? 100 : 70 });
+  editor.scrollHeight = 90;
+  vm.runInContext('updateOutlineVisibility()', app.context);
+  assert.equal(controls.hidden, true);
+  editor.scrollHeight = 120;
+  vm.runInContext('updateOutlineVisibility()', app.context);
+  assert.equal(controls.hidden, false);
+  vm.runInContext('updateOutlineVisibility()', app.context);
+  assert.equal(controls.hidden, false);
+});
+
+
+test('Beim Ausblenden der Gliederung gelangt der Fokus ins Dokument', () => {
+  const app = harness(), controls = app.context.document.getElementById('outline-controls');
+  const editor = app.elements.get('editor'); let focused = false;
+  controls.hidden = false; controls.contains = () => true;
+  editor.clientHeight = 100; editor.scrollHeight = 80;
+  editor.focus = () => { focused = true; };
+  vm.runInContext('updateOutlineVisibility()', app.context);
+  assert.equal(controls.hidden, true);
+  assert.equal(focused, true);
 });

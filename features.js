@@ -10,6 +10,33 @@ let mode = ['live', 'editor', 'split', 'preview'].includes(preferences.mode) ? p
 let split = Math.min(75, Math.max(25, Number(preferences.split) || 50));
 let sidebarHidden = preferences.sidebarHidden === undefined ? !!(window.matchMedia && window.matchMedia('(max-width: 700px)').matches) : !!preferences.sidebarHidden;
 
+// Measure the available document space with the outline out of the flex layout.
+// This prevents the outline itself from creating the overflow that makes it visible.
+let outlineFrame = null;
+function scheduleOutlineVisibility() {
+  if (outlineFrame !== null) return;
+  const schedule = window.requestAnimationFrame ? callback => window.requestAnimationFrame(callback) : callback => setTimeout(callback, 0);
+  outlineFrame = schedule(() => { outlineFrame = null; updateOutlineVisibility(); });
+}
+function updateOutlineVisibility() {
+  const controls = $('outline-controls');
+  if (area !== 'preview') { controls.hidden = true; return; }
+  const previousPosition = controls.style.position;
+  if (!controls.hidden) controls.style.position = 'absolute';
+  let visible;
+  try {
+    const scrolls = element => element.clientHeight > 0 && element.scrollHeight > element.clientHeight + 1;
+    visible = (mode !== 'preview' && scrolls(editor)) ||
+      ((mode === 'preview' || mode === 'split') && scrolls($('preview-view')));
+  } finally { controls.style.position = previousPosition || ''; }
+  if (controls.hidden === !visible) return;
+  if (!visible && controls.contains && controls.contains(document.activeElement)) {
+    const target = mode === 'preview' ? $('preview-view') : editor;
+    target.focus({ preventScroll: true });
+  }
+  controls.hidden = !visible;
+}
+
 function applyLayout() {
   const boardOpen = area !== 'preview';
   $('editor-panel').hidden = boardOpen || mode === 'preview';
@@ -24,6 +51,7 @@ function applyLayout() {
   $('sidebar').inert = sidebarHidden;
   if (window.GraphitMotion) window.GraphitMotion.progress();
   $('toggle-sidebar').setAttribute('aria-expanded', String(!sidebarHidden));
+  scheduleOutlineVisibility();
 }
 function setMode(next) {
   mode = next; preferences.mode = mode; storePreferences();
@@ -85,6 +113,7 @@ function highlightMarkdown(text) {
   }).map(line => `<span class="syntax-line">${line || '&#8203;'}</span>`).join('');
 }
 function renderEditor() {
+  scheduleOutlineVisibility();
   $('editor-highlight').innerHTML = highlightMarkdown(editor.value);
   if (preferences.lines) renderLineNumbers();
   const outline = $('outline'); if (!preferences.outline) { syncScroll(); return; } outline.replaceChildren();
@@ -114,8 +143,10 @@ function renderLineNumbers() {
 function syncScroll() { $('editor-highlight').scrollTop = editor.scrollTop; $('editor-highlight').scrollLeft = editor.scrollLeft; $('line-numbers').scrollTop = editor.scrollTop; }
 function bindFeatureEditor(element) { element.addEventListener('scroll', syncScroll); element.addEventListener('click', renderEditor); element.addEventListener('keyup', renderEditor); if (window.GraphitEnhancements) window.GraphitEnhancements.bindEditor(element); }
 bindFeatureEditor(editor);
-window.addEventListener('resize', () => { renderLineNumbers(); syncScroll(); });
-if (window.ResizeObserver) new window.ResizeObserver(() => { renderLineNumbers(); syncScroll(); }).observe(editor);
+window.addEventListener('resize', () => { renderLineNumbers(); syncScroll(); scheduleOutlineVisibility(); });
+if (window.ResizeObserver) { const observer = new window.ResizeObserver(() => { renderLineNumbers(); syncScroll(); scheduleOutlineVisibility(); }); for (const id of ['workspace', 'editor-wrap', 'preview-view', 'preview', 'related-files', 'backlinks']) observer.observe($(id)); }
+$('preview-view').addEventListener('load', scheduleOutlineVisibility, true);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleOutlineVisibility);
 function applyFormat(kind) {
   const start = editor.selectionStart, end = editor.selectionEnd, selected = editor.value.slice(start, end);
   let replacement, selectStart, selectEnd;
@@ -134,7 +165,7 @@ function applyFormat(kind) {
 }
 document.querySelectorAll('[data-format]').forEach(button => { button.addEventListener('mousedown', e => e.preventDefault()); button.addEventListener('click', () => applyFormat(button.dataset.format)); });
 $('toggle-lines').onclick = () => { preferences.lines = !preferences.lines; storePreferences(); updateEditorOptions(); };
-$('toggle-outline').onclick = () => { preferences.outline = !preferences.outline; storePreferences(); updateEditorOptions(); if (preferences.outline) renderEditor(); };
+$('toggle-outline').onclick = () => { preferences.outline = !preferences.outline; storePreferences(); updateEditorOptions(); if (preferences.outline) renderEditor(); scheduleOutlineVisibility(); };
 function updateEditorOptions() { $('line-numbers').hidden = !preferences.lines; $('toggle-lines').setAttribute('aria-pressed', String(!!preferences.lines)); if (preferences.lines) renderLineNumbers(); $('outline').hidden = !preferences.outline; $('toggle-outline').setAttribute('aria-expanded', String(!!preferences.outline)); }
 
 let recentPaths = [], recentWorkspace = null, recentWrites = Promise.resolve();
@@ -220,7 +251,7 @@ window.addEventListener('keydown', event => {
   if (key === 'p') { event.preventDefault(); openSearch(); }
   if (document.activeElement === editor && ['b', 'i', 'k'].includes(key)) { event.preventDefault(); applyFormat({ b: 'bold', i: 'italic', k: 'link' }[key]); }
 });
-window.FolioFeatures = { renderEditor, showEditor, bindEditor: bindFeatureEditor, renameRecent, documentOpened() { if (area !== 'preview') $('preview-tab').click(); if (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) { sidebarHidden = true; preferences.sidebarHidden = true; storePreferences(); applyLayout(); } rememberDocument(); if (window.GraphitEnhancements) window.GraphitEnhancements.documentOpened(); }, workspaceChanged, selectArea(name) { area = name; $('outline-controls').hidden = name !== 'preview'; applyLayout(); if (name === 'preview' && preferences.outline) renderEditor(); } };
+window.FolioFeatures = { renderEditor, showEditor, scheduleOutlineVisibility, bindEditor: bindFeatureEditor, renameRecent, documentOpened() { if (area !== 'preview') $('preview-tab').click(); if (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) { sidebarHidden = true; preferences.sidebarHidden = true; storePreferences(); applyLayout(); } rememberDocument(); if (window.GraphitEnhancements) window.GraphitEnhancements.documentOpened(); }, workspaceChanged, selectArea(name) { area = name; if (name !== 'preview') $('outline-controls').hidden = true; applyLayout(); if (name === 'preview' && preferences.outline) renderEditor(); scheduleOutlineVisibility(); } };
 updateEditorOptions(); applyLayout(); renderEditor(); if (state.directory) workspaceChanged();
 
 // Motion feedback is decorative; actions never wait for an animation.

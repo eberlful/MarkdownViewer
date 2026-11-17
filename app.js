@@ -110,7 +110,7 @@ function markdown(text, lineOffset = 0) {
   flushParagraph(); flushQuote(); closeList(); if (code !== null) out += `<pre><code>${escapeHTML(code.join('\n'))}</code></pre>`;
   return out;
 }
-function renderPreview() { $('preview').innerHTML = markdown(editor.value); if (window.GraphitImages) window.GraphitImages.resolve($('preview')); renderBacklinks(); if (window.GraphitMotion) window.GraphitMotion.progress(); }
+function renderPreview() { $('preview').innerHTML = markdown(editor.value); if (window.GraphitImages) window.GraphitImages.resolve($('preview')); renderBacklinks(); if (window.GraphitMotion) window.GraphitMotion.progress(); if (window.FolioFeatures) window.FolioFeatures.scheduleOutlineVisibility(); }
 function renderBacklinks() {
   const list = $('backlinks-list'); list.replaceChildren(); $('backlinks-count').textContent = '';
   const message = text => { const p = document.createElement('p'); p.className = 'backlinks-empty'; p.textContent = text; list.append(p); };
