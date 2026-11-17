@@ -93,10 +93,10 @@ function markdown(text, lineOffset = 0) {
         flushParagraph(); flushQuote(); closeList();
         const align = separators.map(cell => cell.startsWith(':') && cell.endsWith(':') ? 'center' : cell.endsWith(':') ? 'right' : cell.startsWith(':') ? 'left' : '');
         const renderCells = (row, tag) => headers.map((_, i) => `<${tag}${align[i] ? ` style="text-align:${align[i]}"` : ''}>${inline(row[i] || '')}</${tag}>`).join('');
-        out += `<table><thead><tr>${renderCells(headers, 'th')}</tr></thead><tbody>`;
+        out += `<div class="markdown-table-scroll"><table><thead><tr>${renderCells(headers, 'th')}</tr></thead><tbody>`;
         let end = index + 2;
         while (end < lines.length && lines[end].trim() && lines[end].includes('|')) { out += `<tr>${renderCells(cells(lines[end]), 'td')}</tr>`; end++; }
-        out += '</tbody></table>'; skipUntil = end - 1; continue;
+        out += '</tbody></table></div>'; skipUntil = end - 1; continue;
       }
     }
     if (/^\s*<!--\s*kanban:(?:start|end)\s*-->\s*$/.test(line)) { flushParagraph(); flushQuote(); closeList(); continue; }

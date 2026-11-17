@@ -43,8 +43,8 @@ function file(name, contents) {
   return { kind: 'file', name, text: contents, async getFile() { return { lastModified: 100, text: async () => this.text }; }, async createWritable() { const self = this; return { async write(text) { self.text = text; }, async close() {} }; } };
 }
 function directory(name, entries) { return { kind: 'directory', name, entriesMap: entries, async *entries() { yield* Object.entries(entries); }, async getDirectoryHandle(name, options = {}) { if (!entries[name] && options.create) entries[name] = directory(name, {}); if (!entries[name]) throw Object.assign(new Error('missing'), { name: 'NotFoundError' }); return entries[name]; }, async getFileHandle(name, options = {}) { if (!entries[name] && options.create) entries[name] = file(name, ''); if (!entries[name]) throw Object.assign(new Error('missing'), { name: 'NotFoundError' }); return entries[name]; }, async removeEntry(name) { delete entries[name]; } }; }
-function harness(indexedDB = makeDB()) {
-  const elements = new Map(), timers = new Map(), storage = new Map(); let timerId = 0;
+function harness(indexedDB = makeDB(), storage = new Map()) {
+  const elements = new Map(), timers = new Map(); let timerId = 0;
   const document = {
     getElementById(id) { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); },
     createElement(tag) { return new Element(tag); }, createTextNode(text) { return text; }, querySelectorAll() { return []; },
@@ -478,4 +478,20 @@ test('Beim Ausblenden der Gliederung gelangt der Fokus ins Dokument', () => {
   vm.runInContext('updateOutlineVisibility()', app.context);
   assert.equal(controls.hidden, true);
   assert.equal(focused, true);
+});
+
+
+test('Lesespalte ist standardmäßig aktiv und merkt sich die Auswahl', () => {
+  const storage = new Map(), app = harness(makeDB(), storage);
+  const button = app.elements.get('toggle-reading-width'), preview = app.elements.get('preview-view');
+  assert.equal(button.attributes['aria-pressed'], 'true');
+  assert.equal(preview.classList.contains('reading-width'), true);
+  button.click();
+  assert.equal(button.attributes['aria-pressed'], 'false');
+  assert.equal(preview.classList.contains('reading-width'), false);
+  assert.equal(JSON.parse(storage.get('folio-ui')).readingWidth, false);
+  const restored = harness(makeDB(), storage);
+  assert.equal(restored.elements.get('toggle-reading-width').attributes['aria-pressed'], 'false');
+  restored.elements.get('toggle-reading-width').click();
+  assert.equal(JSON.parse(storage.get('folio-ui')).readingWidth, true);
 });

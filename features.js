@@ -42,6 +42,10 @@ function applyLayout() {
   $('editor-panel').hidden = boardOpen || mode === 'preview';
   $('result-panel').hidden = !boardOpen && (mode === 'editor' || mode === 'live');
   $('splitter').hidden = boardOpen || mode !== 'split';
+  $('preview-toolbar').hidden = boardOpen || (mode !== 'split' && mode !== 'preview');
+  const readingWidth = preferences.readingWidth !== false;
+  $('preview-view').classList.toggle('reading-width', readingWidth);
+  $('toggle-reading-width').setAttribute('aria-pressed', String(readingWidth));
   $('workspace').style.setProperty('--split', `${split}%`);
   $('workspace').classList.toggle('single', boardOpen || mode !== 'split');
   $('app').classList.toggle('live-mode', mode === 'live' && !boardOpen);
@@ -60,6 +64,7 @@ function setMode(next) {
 }
 function showEditor() { if (area !== 'preview') $('preview-tab').click(); if (mode === 'preview') setMode('split'); }
 document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+$('toggle-reading-width').onclick = () => { preferences.readingWidth = preferences.readingWidth === false; storePreferences(); applyLayout(); if (window.GraphitMotion) window.GraphitMotion.progress(); };
 $('toggle-sidebar').onclick = () => { sidebarHidden = !sidebarHidden; preferences.sidebarHidden = sidebarHidden; storePreferences(); applyLayout(); };
 function setSplit(value) { split = Math.min(75, Math.max(25, value)); preferences.split = split; storePreferences(); applyLayout(); }
 $('splitter').addEventListener('keydown', event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setSplit(split + (event.key === 'ArrowLeft' ? -2 : 2)); } });
